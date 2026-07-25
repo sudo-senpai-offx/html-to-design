@@ -4,6 +4,7 @@ const {
   getStroke, getRadius, fontFamily, fontWeight,
   makePos, zOrderChar, guid, pluginData, readableName,
   parseColor, computeSHA1, computeSHA1Bytes,
+  parseGradient,
 } = require("./utils");
 const { extractStyles } = require("./style-extractor");
 const { detectAutoLayout } = require("./layout");
@@ -27,19 +28,14 @@ function extractDesignTokens(domTree) {
   var colorMap = new Map();
   var spacingSet = new Set();
   var radiusSet = new Set();
-  var fontFamilySet = new Set();
 
   function walk(el) {
     if (!el) return;
     var props = el.props || {};
     var colors = [
-      props["background-color"],
-      props["color"],
-      props["border-color"],
-      props["border-top-color"],
-      props["border-right-color"],
-      props["border-bottom-color"],
-      props["border-left-color"],
+      props["background-color"], props["color"],
+      props["border-top-color"], props["border-right-color"],
+      props["border-bottom-color"], props["border-left-color"],
     ];
     for (var c of colors) {
       if (c && c !== "transparent" && c !== "currentColor" && c !== "inherit") {
@@ -52,62 +48,148 @@ function extractDesignTokens(domTree) {
         }
       }
     }
-
-    var bgImage = props["background-image"];
-    if (bgImage && (bgImage.includes("linear-gradient") || bgImage.includes("radial-gradient"))) {
-      var stopsMatch = bgImage.match(/(rgba?\([^)]+\)|#[0-9a-fA-F]{3,8}|transparent)\s*([\d.]+)%?/g);
-      if (stopsMatch) {
-        for (var s of stopsMatch) {
-          var cm = s.match(/(rgba?\([^)]+\)|#[0-9a-fA-F]{3,8})/);
-          if (cm) {
-            var parsed2 = parseColor(cm[1]);
-            if (parsed2 && parsed2.a > 0.01) {
-              var hex2 = "#" + [parsed2.r, parsed2.g, parsed2.b].map(function(v) {
-                return Math.round(v * 255).toString(16).padStart(2, "0");
-              }).join("");
-              colorMap.set(hex2.toLowerCase(), (colorMap.get(hex2.toLowerCase()) || 0) + 1);
-            }
-          }
-        }
-      }
-    }
-
-    ["margin-top", "margin-bottom", "margin-left", "margin-right",
-     "padding-top", "padding-bottom", "padding-left", "padding-right",
+    ["padding-top", "padding-right", "padding-bottom", "padding-left",
      "gap", "row-gap", "column-gap"].forEach(function(p) {
       var val = parseFloat(props[p]);
       if (val && val > 0 && val <= 200) spacingSet.add(val);
     });
     var rad = parseFloat(props["border-radius"]);
     if (rad && rad > 0 && rad <= 100) radiusSet.add(rad);
-
-    if (props["font-family"]) {
-      fontFamilySet.add(props["font-family"]);
-    }
-
     if (el.children) el.children.forEach(walk);
   }
   walk(domTree);
 
-  var sorted = Array.from(colorMap.entries())
-    .sort(function(a, b) { return b[1] - a[1]; })
-    .slice(0, 30)
-    .map(function(e) { return e[0]; });
-
-  var sortedSpacing = Array.from(spacingSet).sort(function(a, b) { return a - b; }).slice(0, 20);
-  var sortedRadius = Array.from(radiusSet).sort(function(a, b) { return a - b; }).slice(0, 10);
-  var sortedFonts = Array.from(fontFamilySet).slice(0, 5);
-
-  return { colors: sorted, spacing: sortedSpacing, radius: sortedRadius, fonts: sortedFonts };
+  return {
+    colors: Array.from(colorMap.entries()).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 30).map(function(e) { return e[0]; }),
+    spacing: Array.from(spacingSet).sort(function(a, b) { return a - b; }).slice(0, 20),
+    radius: Array.from(radiusSet).sort(function(a, b) { return a - b; }).slice(0, 10),
+  };
 }
 
-function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, doc, parentAutoLayout, parentSvgRastered, ctx) {
+function extractTextStyles(domTree) {
+  var styleMap = new Map();
+  function walk(el) {
+    if (!el) return;
+    var props = el.props || {};
+    if (el.text && el.text.length > 0 && (props["font-size"] || props["font-family"])) {
+      var key = [fontFamily(props["font-family"]), fontWeight(props["font-weight"] || "400"),
+        parseFloat(props["font-size"]) || 16, props["color"] || "#1A1A1A"].join("|");
+      if (!styleMap.has(key)) {
+        styleMap.set(key, {
+          family: fontFamily(props["font-family"]),
+          style: fontWeight(props["font-weight"] || "400"),
+          size: parseFloat(props["font-size"]) || 16,
+          color: parseColor(props["color"] || "#1A1A1A") || { r: 0.1, g: 0.1, b: 0.1, a: 1 },
+          lineHeight: parseFloat(props["line-height"]) || (parseFloat(props["font-size"]) || 16) * 1.6,
+          letterSpacing: parseFloat(props["letter-spacing"]) || 0,
+          count: 1,
+        });
+      } else { styleMap.get(key).count++; }
+    }
+    if (el.children) el.children.forEach(walk);
+  }
+  walk(domTree);
+  return Array.from(styleMap.values()).sort(function(a, b) { return b.count - a.count; }).slice(0, 20);
+}
+
+function mapJustifyContent(jc) {
+  if (jc === "center") return "CENTER";
+  if (jc === "flex-end" || jc === "end") return "MAX";
+  if (jc === "space-between") return "SPACE_BETWEEN";
+  if (jc === "space-around" || jc === "space-evenly") return "SPACE_BETWEEN";
+  return "MIN";
+}
+
+function mapAlignItems(ai) {
+  if (ai === "center") return "CENTER";
+  if (ai === "flex-end" || ai === "end") return "MAX";
+  if (ai === "stretch") return "STRETCH";
+  return "MIN";
+}
+
+function buildDesignTokens(doc, canvasGuid, domTree, ctx) {
+  var tokens = extractDesignTokens(domTree);
+
+  var colorsFrameGuid = guid(1, ctx.nextId++);
+  doc.message.nodeChanges.push({
+    guid: colorsFrameGuid, type: "FRAME", name: "Colors",
+    phase: "CREATED", parentIndex: { guid: canvasGuid, position: "!" },
+    visible: true, opacity: 1,
+    size: { x: tokens.colors.length * 60, y: 80 },
+    transform: makePos(0, 0),
+    fillPaints: [], strokeWeight: 0, strokeAlign: "OUTSIDE",
+    frameMaskDisabled: false,
+    stackMode: "HORIZONTAL", stackSpacing: 8,
+    pluginData: pluginData(false),
+  });
+  for (var hex of tokens.colors) {
+    var c = parseColor(hex);
+    if (!c) continue;
+    doc.message.nodeChanges.push({
+      guid: guid(1, ctx.nextId++), type: "FRAME", name: hex,
+      phase: "CREATED", parentIndex: { guid: colorsFrameGuid, position: zOrderChar(0) },
+      visible: true, opacity: 1, size: { x: 50, y: 50 },
+      transform: makePos(0, 0),
+      fillPaints: [{ type: "SOLID", color: c, opacity: 1, visible: true, blendMode: "NORMAL" }],
+      strokeWeight: 1, strokeAlign: "INSIDE",
+      strokePaints: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 0.1 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
+      cornerRadius: 8, frameMaskDisabled: false,
+      pluginData: pluginData(false),
+    });
+  }
+}
+
+function buildTextStyles(doc, canvasGuid, domTree, ctx) {
+  var textStyles = extractTextStyles(domTree);
+  var stylesFrameGuid = guid(1, ctx.nextId++);
+  doc.message.nodeChanges.push({
+    guid: stylesFrameGuid, type: "FRAME", name: "Text Styles",
+    phase: "CREATED", parentIndex: { guid: canvasGuid, position: "!" },
+    visible: true, opacity: 1,
+    size: { x: 400, y: textStyles.length * 60 },
+    transform: makePos(0, 100),
+    fillPaints: [], strokeWeight: 0, strokeAlign: "OUTSIDE",
+    frameMaskDisabled: false, stackMode: "VERTICAL", stackSpacing: 4,
+    pluginData: pluginData(false),
+  });
+  for (var i = 0; i < textStyles.length; i++) {
+    var ts = textStyles[i];
+    var styleName = ts.family + " " + ts.style + " " + ts.size + "px";
+    var rowGuid = guid(1, ctx.nextId++);
+    doc.message.nodeChanges.push({
+      guid: rowGuid, type: "FRAME", name: styleName.substring(0, 50),
+      phase: "CREATED", parentIndex: { guid: stylesFrameGuid, position: zOrderChar(i) },
+      visible: true, opacity: 1, size: { x: 400, y: Math.max(ts.lineHeight * 1.5, 30) },
+      transform: makePos(0, 0), fillPaints: [],
+      strokeWeight: 0, strokeAlign: "OUTSIDE", frameMaskDisabled: false,
+      stackMode: "HORIZONTAL", stackSpacing: 12,
+      pluginData: pluginData(false),
+    });
+    doc.message.nodeChanges.push({
+      guid: guid(1, ctx.nextId++), type: "TEXT", name: styleName.substring(0, 50),
+      phase: "CREATED", parentIndex: { guid: rowGuid, position: zOrderChar(0) },
+      visible: true, opacity: 1, size: { x: 300, y: ts.lineHeight },
+      transform: makePos(0, 0),
+      textData: { characters: "Aa " + styleName },
+      fontName: { family: ts.family, style: ts.style, postscript: "" },
+      fontSize: Math.min(ts.size, 32),
+      lineHeight: { value: ts.lineHeight, units: "PIXELS" },
+      letterSpacing: { value: ts.letterSpacing, units: "PIXELS" },
+      textAutoResize: "WIDTH_AND_HEIGHT",
+      textAlignHorizontal: "LEFT", textAlignVertical: "CENTER",
+      fillPaints: [{ type: "SOLID", color: ts.color, opacity: 1, visible: true, blendMode: "NORMAL" }],
+      strokeWeight: 0, strokeAlign: "OUTSIDE",
+      pluginData: pluginData(true),
+    });
+  }
+}
+
+async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, doc, parentAutoLayout, parentSvgRastered, ctx) {
   if (!el) return [];
   var nodes = [];
   var tag = el.tag;
   var cls = el.cls || "";
   var props = el.props || {};
-
   var vpX = el.x, vpY = el.y, w = el.w, h = el.h;
 
   var pos = props["position"] || "static";
@@ -119,77 +201,59 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
     relX = vpX - el.positionedAncestor.x;
     relY = vpY - el.positionedAncestor.y;
   } else if (isRelative) {
-    var relTop = parseFloat(props["top"]) || 0;
-    var relLeft = parseFloat(props["left"]) || 0;
-    var relRight = parseFloat(props["right"]) || 0;
-    var relBottom = parseFloat(props["bottom"]) || 0;
-    relX = (vpX - parentX) + (relLeft || -relRight || 0);
-    relY = (vpY - parentY) + (relTop || -relBottom || 0);
+    relX = (vpX - parentX) + ((parseFloat(props["left"]) || 0) || -(parseFloat(props["right"]) || 0));
+    relY = (vpY - parentY) + ((parseFloat(props["top"]) || 0) || -(parseFloat(props["bottom"]) || 0));
   } else if (parentAutoLayout) {
-    relX = 0;
-    relY = 0;
+    relX = 0; relY = 0;
   } else {
-    relX = vpX - parentX;
-    relY = vpY - parentY;
+    relX = vpX - parentX; relY = vpY - parentY;
   }
 
   var s = extractStyles(props, w, h);
   var hasText = el.text && el.text.length > 0;
   var hasChildren = el.children && el.children.length > 0;
 
-  var isSvg = tag === "svg" || tag === "path" || tag === "circle" || tag === "rect" ||
-              tag === "line" || tag === "polyline" || tag === "polygon" || tag === "ellipse";
+  var isSvg = ["svg","path","circle","rect","line","polyline","polygon","ellipse"].indexOf(tag) >= 0;
   var isPseudo = tag === "pseudo-before" || tag === "pseudo-after";
   var isTextInput = tag === "input" || tag === "textarea" || tag === "select";
   var isButton = tag === "button" || cls.includes("btn") || cls.includes("button");
   var isImage = tag === "img";
   var isLink = tag === "a";
-  var isListItem = tag === "li";
 
-  if (parentSvgRastered && isSvg && el.svgRasterId === undefined) {
-    return [];
-  }
-
+  if (parentSvgRastered && isSvg && el.svgRasterId === undefined) return [];
   var display = props["display"] || "block";
   var visibility = props["visibility"] || "visible";
   var opacityVal = parseFloat(props["opacity"]);
-  if (display === "none") return [];
-  if (visibility === "hidden") return [];
+  if (display === "none" || visibility === "hidden") return [];
   if (!isNaN(opacityVal) && opacityVal < 0.01) return [];
 
   var fill = s.fills.slice();
-  if (isButton && fill.length === 0) {
-    fill = solidFill(props["background-color"] || "#3B82F6");
-  }
-
+  if (isButton && fill.length === 0) fill = solidFill(props["background-color"] || "#3B82F6");
   if (isSvg && el.attrs && el.attrs.fill && el.attrs.fill !== "none") {
     var svgFill = parseColor(el.attrs.fill);
-    if (svgFill) {
-      fill = [{ type: "SOLID", color: svgFill, opacity: parseFloat(el.attrs.opacity) || 1, visible: true, blendMode: "NORMAL" }];
-    }
+    if (svgFill) fill = [{ type: "SOLID", color: svgFill, opacity: parseFloat(el.attrs.opacity) || 1, visible: true, blendMode: "NORMAL" }];
   }
 
   var zPos = zOrderChar(childIndex || 0);
-  var name = el.figmaName || readableName(tag, cls, hasText ? el.text : "");
-  var containerGuid = null;
+  var name = readableName(tag, cls, hasText ? el.text : "");
+  if (isPseudo) name = (tag === "pseudo-before" ? "::before " : "::after ") + (el.text || "").substring(0, 20);
+  if (cls) name = cls.split(/\s+/)[0].replace(/^[.#]/, "") + " [" + tag + "]";
+  name = name.substring(0, 50);
 
+  var containerGuid = null;
   var overflow = props["overflow"] || "visible";
   var clipsContent = overflow === "hidden" || overflow === "scroll" || overflow === "auto";
 
   if (w > 0 && h > 0) {
     containerGuid = guid(1, ctx.nextId++);
-
     var isContainer = !isSvg && !isImage && (hasChildren || hasText);
-
     var nodeType = "RECTANGLE";
     if (tag === "circle" || tag === "ellipse") nodeType = "ELLIPSE";
     if (isContainer) nodeType = "FRAME";
 
     var node = {
-      guid: containerGuid, type: nodeType,
-      name: name.substring(0, 50),
-      phase: "CREATED",
-      parentIndex: { guid: parentGuid, position: zPos },
+      guid: containerGuid, type: nodeType, name: name,
+      phase: "CREATED", parentIndex: { guid: parentGuid, position: zPos },
       visible: true, opacity: s.opacity,
       size: { x: Math.max(w, 1), y: Math.max(h, 1) },
       transform: makePos(relX, relY),
@@ -203,62 +267,64 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
       pluginData: pluginData(false),
     };
 
-    if (isContainer && s.layoutMode !== "NONE") {
-      var layout = detectAutoLayout(el, el.children ? el.children.length : 0);
-      node.stackMode = layout.stackMode;
-      node.stackSpacing = layout.stackSpacing;
-      node.stackJustify = layout.stackJustify;
-      node.stackCounterAlign = layout.stackCounterAlign;
-      node.stackPrimarySizing = layout.stackPrimarySizing;
-      node.stackCounterSizing = layout.stackCounterSizing;
-      if (layout.stackWrapEnabled) node.stackWrapEnabled = true;
-      if (layout.stackPaddingTop > 0) node.stackPaddingTop = layout.stackPaddingTop;
-      if (layout.stackPaddingRight > 0) node.stackPaddingRight = layout.stackPaddingRight;
-      if (layout.stackPaddingBottom > 0) node.stackPaddingBottom = layout.stackPaddingBottom;
-      if (layout.stackPaddingLeft > 0) node.stackPaddingLeft = layout.stackPaddingLeft;
-
-      if (layout.isGrid && layout.gridInfo) {
-        node.name = name.substring(0, 40) + " [Grid]";
+    if (isContainer) {
+      var display2 = props["display"] || "block";
+      var isFlex = display2 === "flex" || display2 === "inline-flex";
+      var isGrid = display2 === "grid" || display2 === "inline-grid";
+      if (isFlex || isGrid) {
+        var flexDir = props["flex-direction"] || "row";
+        node.stackMode = (flexDir === "column" || flexDir === "column-reverse") ? "VERTICAL" : "HORIZONTAL";
+        node.stackSpacing = parseFloat(props["gap"]) || parseFloat(props["column-gap"]) || parseFloat(props["row-gap"]) || 0;
+        node.stackJustify = mapJustifyContent(props["justify-content"] || "flex-start");
+        node.stackCounterAlign = mapAlignItems(props["align-items"] || "stretch");
+        if (props["flex-wrap"] === "wrap" || props["flex-wrap"] === "wrap-reverse") node.stackWrapEnabled = true;
+        var pt = parseFloat(props["padding-top"]) || 0;
+        var pr = parseFloat(props["padding-right"]) || 0;
+        var pb = parseFloat(props["padding-bottom"]) || 0;
+        var pl = parseFloat(props["padding-left"]) || 0;
+        if (pt > 0) node.stackPaddingTop = pt;
+        if (pr > 0) node.stackPaddingRight = pr;
+        if (pb > 0) node.stackPaddingBottom = pb;
+        if (pl > 0) node.stackPaddingLeft = pl;
+        node.stackPrimarySizing = "FIXED";
+        node.stackCounterSizing = "FIXED";
+        if (isGrid) node.name = name + " [Grid]";
       }
-    }
-
-    if (isButton) {
-      node.name = name.substring(0, 40) + " [Button]";
-    }
-    if (isLink) {
-      node.name = name.substring(0, 40) + " [Link]";
-    }
-    if (isListItem) {
-      node.name = name.substring(0, 40) + " [List Item]";
-    }
-
-    nodes.push(node);
-
-    if (s.bgImageUrl && assetManager) {
-      var bgScaleMode = "FILL";
-      var bgSize = props["background-size"] || "";
-      if (bgSize === "contain") bgScaleMode = "FIT";
-      else if (bgSize === "cover") bgScaleMode = "FILL";
-      else if (bgSize === "auto") bgScaleMode = "TILE";
-      ctx.pendingImages.push({ url: s.bgImageUrl, nodeGuid: containerGuid, scaleMode: bgScaleMode });
     }
 
     if (s.blurAmount > 0) {
       if (!node.effects) node.effects = [];
-      node.effects.push({
-        type: "BACKGROUND_BLUR",
-        visible: true,
-        opacity: 0.5,
-        radius: s.blurAmount,
-        blendMode: "NORMAL",
-      });
+      node.effects.push({ type: "BACKGROUND_BLUR", visible: true, opacity: 0.5, radius: s.blurAmount, blendMode: "NORMAL" });
     }
-
     if (s.outline) {
       node.strokeWeight = s.outline.weight;
       node.strokeAlign = "OUTSIDE";
       node.strokePaints = [{ type: "SOLID", color: s.outline.color, opacity: 1, visible: true, blendMode: "NORMAL" }];
     }
+
+    if (s.bgImageUrl && assetManager) {
+      try {
+        var imgResult = await assetManager.download(s.bgImageUrl);
+        if (imgResult && imgResult.buffer) {
+          var imgHash = computeSHA1(imgResult.buffer);
+          var imgHashBytes = computeSHA1Bytes(imgResult.buffer);
+          if (!doc.images) doc.images = new Map();
+          doc.images.set(imgHash, imgResult.buffer);
+          var bgScaleMode = "FILL";
+          var bgSize = props["background-size"] || "";
+          if (bgSize === "contain") bgScaleMode = "FIT";
+          else if (bgSize === "auto") bgScaleMode = "TILE";
+          node.fillPaints = [{
+            type: "IMAGE", opacity: 1, visible: true, blendMode: "NORMAL",
+            transform: { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 },
+            image: { hash: imgHashBytes },
+            imageScaleMode: bgScaleMode,
+          }];
+        }
+      } catch (e) {}
+    }
+
+    nodes.push(node);
   }
 
   if (isImage && el.src && w > 0 && h > 0) {
@@ -267,44 +333,54 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
     if (objFit === "contain") imgScaleMode = "FIT";
     else if (objFit === "cover") imgScaleMode = "FILL";
     else if (objFit === "none") imgScaleMode = "NONE";
-    else if (objFit === "scale-down") imgScaleMode = "FIT";
 
     if (!containerGuid) {
       containerGuid = guid(1, ctx.nextId++);
       nodes.push({
-        guid: containerGuid, type: "RECTANGLE",
-        name: (el.alt || "Image").substring(0, 50),
-        phase: "CREATED",
-        parentIndex: { guid: parentGuid, position: zPos },
+        guid: containerGuid, type: "RECTANGLE", name: (el.alt || "Image").substring(0, 50),
+        phase: "CREATED", parentIndex: { guid: parentGuid, position: zPos },
         visible: true, opacity: s.opacity,
         size: { x: Math.max(w, 1), y: Math.max(h, 1) },
         transform: makePos(relX, relY),
         fillPaints: solidFill("#f3f4f6"),
-        strokeWeight: 0, strokeAlign: "OUTSIDE",
-        cornerRadius: s.radius,
-        effects: undefined,
-        frameMaskDisabled: true,
-        pluginData: pluginData(false),
+        strokeWeight: 0, strokeAlign: "OUTSIDE", cornerRadius: s.radius,
+        frameMaskDisabled: true, pluginData: pluginData(false),
       });
     }
-    ctx.pendingImages.push({ url: el.src, nodeGuid: containerGuid, scaleMode: imgScaleMode });
+    try {
+      var imgResult2 = await assetManager.download(el.src);
+      if (imgResult2 && imgResult2.buffer) {
+        var imgHash2 = computeSHA1(imgResult2.buffer);
+        var imgHashBytes2 = computeSHA1Bytes(imgResult2.buffer);
+        if (!doc.images) doc.images = new Map();
+        doc.images.set(imgHash2, imgResult2.buffer);
+        var targetNode = null;
+        for (var n of nodes) {
+          if (n.guid && n.guid.localID === containerGuid.localID) { targetNode = n; break; }
+        }
+        if (targetNode) {
+          targetNode.fillPaints = [{
+            type: "IMAGE", opacity: 1, visible: true, blendMode: "NORMAL",
+            transform: { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 },
+            image: { hash: imgHashBytes2 },
+            imageScaleMode: imgScaleMode,
+          }];
+        }
+      }
+    } catch (e) {}
   }
 
   if (isSvg && el.svgRasterId !== undefined && el.svgRasterId >= 0 && w > 0 && h > 0) {
     if (!containerGuid) {
       containerGuid = guid(1, ctx.nextId++);
       nodes.push({
-        guid: containerGuid, type: "RECTANGLE",
-        name: (el.figmaName || "SVG Icon").substring(0, 50),
-        phase: "CREATED",
-        parentIndex: { guid: parentGuid, position: zPos },
+        guid: containerGuid, type: "RECTANGLE", name: (el.figmaName || "SVG Icon").substring(0, 50),
+        phase: "CREATED", parentIndex: { guid: parentGuid, position: zPos },
         visible: true, opacity: s.opacity,
         size: { x: Math.max(w, 1), y: Math.max(h, 1) },
         transform: makePos(relX, relY),
         fillPaints: solidFill("#f3f4f6"),
-        strokeWeight: 0, strokeAlign: "OUTSIDE",
-        effects: undefined,
-        frameMaskDisabled: true,
+        strokeWeight: 0, strokeAlign: "OUTSIDE", frameMaskDisabled: true,
         pluginData: pluginData(false),
       });
     }
@@ -313,18 +389,14 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
     containerGuid = guid(1, ctx.nextId++);
     var svgFill = parseColor(el.attrs && el.attrs.fill);
     nodes.push({
-      guid: containerGuid, type: "VECTOR",
-      name: "SVG Icon",
-      phase: "CREATED",
-      parentIndex: { guid: parentGuid, position: zPos },
+      guid: containerGuid, type: "VECTOR", name: "SVG Icon",
+      phase: "CREATED", parentIndex: { guid: parentGuid, position: zPos },
       visible: true, opacity: s.opacity,
       size: { x: Math.max(w, 1), y: Math.max(h, 1) },
       transform: makePos(relX, relY),
       fillPaints: svgFill ? [{ type: "SOLID", color: svgFill, opacity: 1, visible: true, blendMode: "NORMAL" }] : fill,
-      strokeWeight: 0, strokeAlign: "OUTSIDE",
-      effects: s.effects,
-      frameMaskDisabled: true,
-      pluginData: pluginData(false),
+      strokeWeight: 0, strokeAlign: "OUTSIDE", effects: s.effects,
+      frameMaskDisabled: true, pluginData: pluginData(false),
     });
   }
 
@@ -332,10 +404,8 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
     var displayVal = el.value || el.placeholder || "";
     if (displayVal) {
       nodes.push({
-        guid: guid(1, ctx.nextId++), type: "TEXT",
-        name: ("Input: " + displayVal).substring(0, 50),
-        phase: "CREATED",
-        parentIndex: { guid: containerGuid || parentGuid, position: zOrderChar(0) },
+        guid: guid(1, ctx.nextId++), type: "TEXT", name: ("Input: " + displayVal).substring(0, 50),
+        phase: "CREATED", parentIndex: { guid: containerGuid || parentGuid, position: zOrderChar(0) },
         visible: true, opacity: s.opacity,
         size: { x: Math.max(w - 32, 10), y: Math.max(h - 28, 10) },
         transform: makePos(16, 14),
@@ -356,10 +426,8 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
 
   if (isButton && hasText) {
     nodes.push({
-      guid: guid(1, ctx.nextId++), type: "TEXT",
-      name: el.text.substring(0, 50),
-      phase: "CREATED",
-      parentIndex: { guid: containerGuid || parentGuid, position: zOrderChar(0) },
+      guid: guid(1, ctx.nextId++), type: "TEXT", name: el.text.substring(0, 50),
+      phase: "CREATED", parentIndex: { guid: containerGuid || parentGuid, position: zOrderChar(0) },
       visible: true, opacity: s.opacity,
       size: { x: Math.max(w, 10), y: Math.max(h, 10) },
       transform: makePos(0, 0),
@@ -369,8 +437,7 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
       lineHeight: { value: (parseFloat(props["font-size"]) || 16) * 1.4, units: "PIXELS" },
       letterSpacing: { value: 0, units: "PIXELS" },
       textAutoResize: "WIDTH_AND_HEIGHT",
-      textAlignHorizontal: "CENTER",
-      textAlignVertical: "CENTER",
+      textAlignHorizontal: "CENTER", textAlignVertical: "CENTER",
       fillPaints: solidFill(props["color"] || "#FFFFFF"),
       strokeWeight: 0, strokeAlign: "OUTSIDE",
       pluginData: pluginData(true),
@@ -379,13 +446,10 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
 
   if (hasText && !isTextInput && !isButton) {
     var ff = fontFamily(props["font-family"]);
-
     var textFill = solidFill(props["color"] || "#1A1A1A");
     if (s.textProps && s.textProps.color) {
       var tc = parseColor(s.textProps.color);
-      if (tc && tc.a > 0.01) {
-        textFill = solidFill(s.textProps.color);
-      }
+      if (tc && tc.a > 0.01) textFill = solidFill(s.textProps.color);
     }
 
     var whiteSpace = props["white-space"] || "normal";
@@ -394,12 +458,10 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
     var textTruncation = undefined;
     if (whiteSpace === "nowrap" || textOverflow === "ellipsis") {
       textAutoResize = "WIDTH_AND_HEIGHT";
-      if (textOverflow === "ellipsis") {
-        textTruncation = "TRUNCATE";
-      }
+      if (textOverflow === "ellipsis") textTruncation = "TRUNCATE";
     }
 
-    var allEffects = s.effects || [];
+    var allEffects = (s.effects || []).slice();
     if (s.textShadowEffects && s.textShadowEffects.length > 0) {
       allEffects = allEffects.concat(s.textShadowEffects);
     }
@@ -408,39 +470,29 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
     var displayText = el.text;
     if (textTransform === "uppercase") displayText = displayText.toUpperCase();
     else if (textTransform === "lowercase") displayText = displayText.toLowerCase();
-    else if (textTransform === "capitalize") {
-      displayText = displayText.replace(/\b\w/g, function(c) { return c.toUpperCase(); });
-    }
+    else if (textTransform === "capitalize") displayText = displayText.replace(/\b\w/g, function(c) { return c.toUpperCase(); });
 
     var fontSize = parseFloat(props["font-size"]) || 16;
     var lineHeightVal = parseFloat(props["line-height"]);
-    if (!lineHeightVal || isNaN(lineHeightVal)) {
-      lineHeightVal = fontSize * 1.6;
-    }
+    if (!lineHeightVal || isNaN(lineHeightVal)) lineHeightVal = fontSize * 1.6;
     var letterSpacing = parseFloat(props["letter-spacing"]) || 0;
+    var textDecoration = s.textProps ? s.textProps.decoration : undefined;
 
-    var textX = 0;
-    var textY = 0;
-    if (!containerGuid) {
-      textX = relX;
-      textY = relY;
-    }
+    var textX = 0, textY = 0;
+    if (!containerGuid) { textX = relX; textY = relY; }
 
-    var textDecoration = undefined;
-    if (s.textProps && s.textProps.decoration) {
-      textDecoration = s.textProps.decoration;
-    }
+    var fontWeightVal = fontWeight(props["font-weight"] || "400");
+    var fontStyleVal = props["font-style"] === "italic" ? "Italic" : "";
+    var fullStyle = fontWeightVal + (fontStyleVal ? " " + fontStyleVal : "");
 
     nodes.push({
-      guid: guid(1, ctx.nextId++), type: "TEXT",
-      name: displayText.substring(0, 60),
-      phase: "CREATED",
-      parentIndex: { guid: containerGuid || parentGuid, position: zOrderChar(hasChildren ? 99 : 0) },
+      guid: guid(1, ctx.nextId++), type: "TEXT", name: displayText.substring(0, 60),
+      phase: "CREATED", parentIndex: { guid: containerGuid || parentGuid, position: zOrderChar(hasChildren ? 99 : 0) },
       visible: true, opacity: s.opacity,
       size: { x: Math.max(w, 1), y: Math.max(h, 1) },
       transform: makePos(textX, textY),
       textData: { characters: displayText },
-      fontName: { family: ff, style: fontWeight(props["font-weight"] || "400"), postscript: "" },
+      fontName: { family: ff, style: fullStyle, postscript: "" },
       fontSize: fontSize,
       lineHeight: { value: lineHeightVal, units: "PIXELS" },
       letterSpacing: { value: letterSpacing, units: "PIXELS" },
@@ -458,10 +510,11 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
 
   if (el.children) {
     var targetGuid = containerGuid || parentGuid;
-    var elAutoLayout = isContainer && s.layoutMode !== "NONE";
+    var elAutoLayout = containerGuid !== null && (props["display"] === "flex" || props["display"] === "inline-flex" || props["display"] === "grid" || props["display"] === "inline-grid");
     var childSvgRastered = parentSvgRastered || (isSvg && el.svgRasterId !== undefined && el.svgRasterId >= 0);
     for (var i = 0; i < el.children.length; i++) {
-      nodes.push(...buildNodes(el.children[i], targetGuid, vpX, vpY, i, assetManager, doc, elAutoLayout, childSvgRastered, ctx));
+      var childNodes = await buildNodes(el.children[i], targetGuid, vpX, vpY, i, assetManager, doc, elAutoLayout, childSvgRastered, ctx);
+      nodes.push(...childNodes);
     }
   }
 
@@ -470,35 +523,26 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
 
 function injectPendingImages(doc, pendingImages, assetManager, rasterizedSvgs) {
   for (var pending of pendingImages) {
-    var hash = null;
-    var buffer = null;
-
+    var hash = null, buffer = null;
     if (pending.svgRasterId !== undefined && rasterizedSvgs && rasterizedSvgs[pending.svgRasterId]) {
-      var b64 = rasterizedSvgs[pending.svgRasterId];
-      buffer = Buffer.from(b64, "base64");
+      buffer = Buffer.from(rasterizedSvgs[pending.svgRasterId], "base64");
       hash = computeSHA1(buffer);
       if (!doc.images) doc.images = new Map();
       doc.images.set(hash, buffer);
     } else if (pending.url && assetManager && assetManager.cache.has(pending.url)) {
       var cached = assetManager.cache.get(pending.url);
-      buffer = cached.buffer;
-      hash = cached.hash;
+      buffer = cached.buffer; hash = cached.hash;
       if (!doc.images) doc.images = new Map();
       doc.images.set(hash, cached.buffer);
-    } else {
-      continue;
-    }
-
+    } else { continue; }
     var hashBytes = computeSHA1Bytes(buffer);
-
     var targetNode = null;
     for (var n of doc.message.nodeChanges) {
       if (n.guid && n.guid.localID === pending.nodeGuid.localID) { targetNode = n; break; }
     }
     if (targetNode) {
       targetNode.fillPaints = [{
-        type: "IMAGE",
-        opacity: 1, visible: true, blendMode: "NORMAL",
+        type: "IMAGE", opacity: 1, visible: true, blendMode: "NORMAL",
         transform: { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 },
         image: { hash: hashBytes },
         imageScaleMode: pending.scaleMode,
@@ -512,302 +556,48 @@ function flattenTree(doc) {
   var pageGuidLocal = null;
   for (var n of nodes) {
     if (n.type === "FRAME" && n.name && n.size && n.size.x > 1000) {
-      pageGuidLocal = n.guid;
-      break;
+      pageGuidLocal = n.guid; break;
     }
   }
-
-  var removed = 0;
-  var changed = true;
+  var removed = 0, changed = true;
   while (changed) {
     changed = false;
     for (var i = nodes.length - 1; i >= 0; i--) {
       var node = nodes[i];
       if (node.type !== "FRAME") continue;
       if (pageGuidLocal && node.guid.localID === pageGuidLocal.localID) continue;
-      if (node.name === "Components") continue;
-
+      if (node.name === "Components" || node.name === "Colors" || node.name === "Text Styles") continue;
       if (!isNodeEmpty(node)) continue;
-
       var children = [];
       for (var j = 0; j < nodes.length; j++) {
         var c = nodes[j];
-        if (c.parentIndex && c.parentIndex.guid && c.parentIndex.guid.localID === node.guid.localID) {
-          children.push(c);
-        }
+        if (c.parentIndex && c.parentIndex.guid && c.parentIndex.guid.localID === node.guid.localID) children.push(c);
       }
-
-      if (children.length === 0) {
-        nodes.splice(i, 1);
-        removed++;
-        changed = true;
-        continue;
-      }
-
+      if (children.length === 0) { nodes.splice(i, 1); removed++; changed = true; continue; }
       if (children.length === 1) {
         var child = children[0];
         child.parentIndex = { guid: node.parentIndex.guid, position: node.parentIndex.position };
         if (child.transform && node.transform) {
-          child.transform = {
-            m00: 1, m01: 0,
+          child.transform = { m00: 1, m01: 0,
             m02: Math.round((child.transform.m02 || 0) + (node.transform.m02 || 0)),
             m10: 0, m11: 1,
             m12: Math.round((child.transform.m12 || 0) + (node.transform.m12 || 0)),
           };
         }
-        if (!child.pluginData || child.pluginData.length === 0) {
-          child.pluginData = pluginData(child.type === "TEXT");
-        }
-        nodes.splice(i, 1);
-        removed++;
-        changed = true;
+        if (!child.pluginData || child.pluginData.length === 0) child.pluginData = pluginData(child.type === "TEXT");
+        nodes.splice(i, 1); removed++; changed = true;
       }
     }
   }
   return removed;
 }
 
-function buildDesignTokens(doc, canvasGuid, domTree, ctx) {
-  var tokens = extractDesignTokens(domTree);
-
-  var posIdx = 0;
-
-  var colorsFrameGuid = guid(1, ctx.nextId++);
-  doc.message.nodeChanges.push({
-    guid: colorsFrameGuid, type: "FRAME", name: "Colors",
-    phase: "CREATED",
-    parentIndex: { guid: canvasGuid, position: "!" },
-    visible: true, opacity: 1,
-    size: { x: tokens.colors.length * 60, y: 80 },
-    transform: makePos(0, 0),
-    fillPaints: [],
-    strokeWeight: 0, strokeAlign: "OUTSIDE",
-    frameMaskDisabled: false,
-    stackMode: "HORIZONTAL",
-    stackSpacing: 8,
-    pluginData: pluginData(false),
-  });
-
-  for (var hex of tokens.colors) {
-    var c = parseColor(hex);
-    if (!c) continue;
-    doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "FRAME", name: hex,
-      phase: "CREATED",
-      parentIndex: { guid: colorsFrameGuid, position: zOrderChar(posIdx++) },
-      visible: true, opacity: 1,
-      size: { x: 50, y: 50 },
-      transform: makePos(0, 0),
-      fillPaints: [{ type: "SOLID", color: c, opacity: 1, visible: true, blendMode: "NORMAL" }],
-      strokeWeight: 1,
-      strokeAlign: "INSIDE",
-      strokePaints: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 0.1 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
-      cornerRadius: 8,
-      frameMaskDisabled: false,
-      pluginData: pluginData(false),
-    });
-  }
-
-  var spacingFrameGuid = guid(1, ctx.nextId++);
-  doc.message.nodeChanges.push({
-    guid: spacingFrameGuid, type: "FRAME", name: "Spacing",
-    phase: "CREATED",
-    parentIndex: { guid: canvasGuid, position: "!" },
-    visible: true, opacity: 1,
-    size: { x: 300, y: 40 },
-    transform: makePos(0, 100),
-    fillPaints: [],
-    strokeWeight: 0, strokeAlign: "OUTSIDE",
-    frameMaskDisabled: false,
-    stackMode: "HORIZONTAL",
-    stackSpacing: 4,
-    pluginData: pluginData(false),
-  });
-
-  for (var sp of tokens.spacing) {
-    doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "RECTANGLE", name: "Space/" + sp,
-      phase: "CREATED",
-      parentIndex: { guid: spacingFrameGuid, position: zOrderChar(posIdx++) },
-      visible: true, opacity: 1,
-      size: { x: Math.max(sp, 2), y: 20 },
-      transform: makePos(0, 0),
-      fillPaints: [{ type: "SOLID", color: { r: 0.3, g: 0.5, b: 0.9, a: 1 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
-      strokeWeight: 0, strokeAlign: "OUTSIDE",
-      cornerRadius: 2,
-      frameMaskDisabled: true,
-      pluginData: pluginData(false),
-    });
-  }
-
-  var radiusFrameGuid = guid(1, ctx.nextId++);
-  doc.message.nodeChanges.push({
-    guid: radiusFrameGuid, type: "FRAME", name: "Radii",
-    phase: "CREATED",
-    parentIndex: { guid: canvasGuid, position: "!" },
-    visible: true, opacity: 1,
-    size: { x: 300, y: 50 },
-    transform: makePos(0, 160),
-    fillPaints: [],
-    strokeWeight: 0, strokeAlign: "OUTSIDE",
-    frameMaskDisabled: false,
-    stackMode: "HORIZONTAL",
-    stackSpacing: 8,
-    pluginData: pluginData(false),
-  });
-
-  for (var r of tokens.radius) {
-    doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "RECTANGLE", name: "Radius/" + r,
-      phase: "CREATED",
-      parentIndex: { guid: radiusFrameGuid, position: zOrderChar(posIdx++) },
-      visible: true, opacity: 1,
-      size: { x: 40, y: 40 },
-      transform: makePos(0, 0),
-      fillPaints: [{ type: "SOLID", color: { r: 0.8, g: 0.4, b: 0.2, a: 1 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
-      strokeWeight: 1,
-      strokeAlign: "INSIDE",
-      strokePaints: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 0.15 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
-      cornerRadius: Math.min(r, 20),
-      frameMaskDisabled: true,
-      pluginData: pluginData(false),
-    });
-  }
-}
-
-function extractTextStyles(domTree) {
-  var styleMap = new Map();
-
-  function walk(el) {
-    if (!el) return;
-    var props = el.props || {};
-    var hasText = el.text && el.text.length > 0;
-
-    if (hasText && (props["font-size"] || props["font-family"])) {
-      var key = [
-        fontFamily(props["font-family"]),
-        fontWeight(props["font-weight"] || "400"),
-        parseFloat(props["font-size"]) || 16,
-        props["color"] || "#1A1A1A",
-      ].join("|");
-
-      if (!styleMap.has(key)) {
-        styleMap.set(key, {
-          family: fontFamily(props["font-family"]),
-          style: fontWeight(props["font-weight"] || "400"),
-          size: parseFloat(props["font-size"]) || 16,
-          color: parseColor(props["color"] || "#1A1A1A") || { r: 0.1, g: 0.1, b: 0.1, a: 1 },
-          lineHeight: parseFloat(props["line-height"]) || (parseFloat(props["font-size"]) || 16) * 1.6,
-          letterSpacing: parseFloat(props["letter-spacing"]) || 0,
-          count: 1,
-        });
-      } else {
-        styleMap.get(key).count++;
-      }
-    }
-
-    if (el.children) el.children.forEach(walk);
-  }
-  walk(domTree);
-
-  var styles = Array.from(styleMap.values())
-    .sort(function(a, b) { return b.count - a.count; })
-    .slice(0, 20);
-
-  return styles;
-}
-
-function buildTextStyles(doc, canvasGuid, domTree, ctx) {
-  var textStyles = extractTextStyles(domTree);
-
-  var stylesFrameGuid = guid(1, ctx.nextId++);
-  doc.message.nodeChanges.push({
-    guid: stylesFrameGuid, type: "FRAME", name: "Text Styles",
-    phase: "CREATED",
-    parentIndex: { guid: canvasGuid, position: "!" },
-    visible: true, opacity: 1,
-    size: { x: 400, y: textStyles.length * 60 },
-    transform: makePos(0, 240),
-    fillPaints: [],
-    strokeWeight: 0, strokeAlign: "OUTSIDE",
-    frameMaskDisabled: false,
-    stackMode: "VERTICAL",
-    stackSpacing: 4,
-    pluginData: pluginData(false),
-  });
-
-  for (var i = 0; i < textStyles.length; i++) {
-    var ts = textStyles[i];
-    var styleName = ts.family + " " + ts.style + " " + ts.size + "px";
-
-    var rowGuid = guid(1, ctx.nextId++);
-    doc.message.nodeChanges.push({
-      guid: rowGuid, type: "FRAME", name: styleName.substring(0, 50),
-      phase: "CREATED",
-      parentIndex: { guid: stylesFrameGuid, position: zOrderChar(i) },
-      visible: true, opacity: 1,
-      size: { x: 400, y: Math.max(ts.lineHeight * 1.5, 30) },
-      transform: makePos(0, 0),
-      fillPaints: [],
-      strokeWeight: 0, strokeAlign: "OUTSIDE",
-      frameMaskDisabled: false,
-      stackMode: "HORIZONTAL",
-      stackSpacing: 12,
-      pluginData: pluginData(false),
-    });
-
-    doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "TEXT",
-      name: styleName.substring(0, 50),
-      phase: "CREATED",
-      parentIndex: { guid: rowGuid, position: zOrderChar(0) },
-      visible: true, opacity: 1,
-      size: { x: 300, y: ts.lineHeight },
-      transform: makePos(0, 0),
-      textData: { characters: "Aa " + styleName },
-      fontName: { family: ts.family, style: ts.style, postscript: "" },
-      fontSize: Math.min(ts.size, 32),
-      lineHeight: { value: ts.lineHeight, units: "PIXELS" },
-      letterSpacing: { value: ts.letterSpacing, units: "PIXELS" },
-      textAutoResize: "WIDTH_AND_HEIGHT",
-      textAlignHorizontal: "LEFT",
-      textAlignVertical: "CENTER",
-      fillPaints: [{ type: "SOLID", color: ts.color, opacity: 1, visible: true, blendMode: "NORMAL" }],
-      strokeWeight: 0, strokeAlign: "OUTSIDE",
-      pluginData: pluginData(true),
-    });
-
-    doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "RECTANGLE",
-      name: "Swatch",
-      phase: "CREATED",
-      parentIndex: { guid: rowGuid, position: zOrderChar(1) },
-      visible: true, opacity: 1,
-      size: { x: 20, y: 20 },
-      transform: makePos(0, 0),
-      fillPaints: [{ type: "SOLID", color: ts.color, opacity: 1, visible: true, blendMode: "NORMAL" }],
-      strokeWeight: 1,
-      strokeAlign: "INSIDE",
-      strokePaints: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 0.1 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
-      cornerRadius: 4,
-      frameMaskDisabled: true,
-      pluginData: pluginData(false),
-    });
-  }
-}
-
-function buildDocument(domTree, pageWidth, pageHeight, pageName, assetManager, rasterizedSvgs) {
-  var ctx = {
-    nextId: 500,
-    pageGuid: null,
-    pendingImages: [],
-  };
-
+async function buildDocument(domTree, pageWidth, pageHeight, pageName, assetManager, rasterizedSvgs) {
+  var ctx = { nextId: 500, pageGuid: null, pendingImages: [] };
   var doc = createEmptyFigDoc();
   for (var n of doc.message.nodeChanges) {
     if (n.guid && n.guid.localID >= ctx.nextId) ctx.nextId = n.guid.localID + 1;
   }
-
   var canvasGuid = doc.message.nodeChanges.find(function(n) { return n.type === "CANVAS"; }).guid;
 
   buildDesignTokens(doc, canvasGuid, domTree, ctx);
@@ -816,22 +606,17 @@ function buildDocument(domTree, pageWidth, pageHeight, pageName, assetManager, r
   ctx.pageGuid = guid(1, ctx.nextId++);
   doc.message.nodeChanges.push({
     guid: ctx.pageGuid, type: "FRAME", name: pageName,
-    phase: "CREATED",
-    parentIndex: { guid: canvasGuid, position: "!" },
+    phase: "CREATED", parentIndex: { guid: canvasGuid, position: "!" },
     visible: true, opacity: 1,
     size: { x: pageWidth, y: pageHeight },
     transform: { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 },
-    frameMaskDisabled: false,
-    pluginData: pluginData(false),
+    frameMaskDisabled: false, pluginData: pluginData(false),
   });
 
-  var allNodes = buildNodes(domTree, ctx.pageGuid, 0, 0, 0, assetManager, doc, false, undefined, ctx);
+  var allNodes = await buildNodes(domTree, ctx.pageGuid, 0, 0, 0, assetManager, doc, false, undefined, ctx);
   doc.message.nodeChanges.push(...allNodes);
-
   injectPendingImages(doc, ctx.pendingImages, assetManager, rasterizedSvgs);
-
-  var removedCount = flattenTree(doc);
-
+  flattenTree(doc);
   return doc;
 }
 

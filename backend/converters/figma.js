@@ -21,7 +21,7 @@ async function convertToFigma(html, options) {
 
     console.log(`  Building Figma nodes...`);
     const assetManager = new AssetManager();
-    const doc = buildDocument(domTree, pageWidth, pageHeight, "HTML Export", assetManager, rasterizedSvgs);
+    const doc = await buildDocument(domTree, pageWidth, pageHeight, "HTML Export", assetManager, rasterizedSvgs);
 
     console.log(`  Serializing .fig file...`);
     const figBuffer = await writeFigBuffer(doc);
