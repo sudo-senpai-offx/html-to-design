@@ -11,6 +11,8 @@ interface CompareResult {
   structuralScore: number;
   layoutScore: number;
   overallScore: number;
+  comparisonMode?: string;
+  formatNote?: string;
   diffImageUrl?: string;
   originalImageUrl?: string;
   convertedImageUrl?: string;
@@ -249,7 +251,14 @@ export default function OutputInterpreter({ html, css, format, convertedBlob, on
       )}
 
       {result && (
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden flex-col">
+          {result.formatNote && (
+            <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 flex items-center gap-2 shrink-0">
+              <AlertTriangle size={13} className="text-amber-400 shrink-0" />
+              <span className="text-xs text-amber-300">{result.formatNote}</span>
+            </div>
+          )}
+          <div className="flex-1 flex overflow-hidden">
           <div className="flex-1 flex flex-col">
             {viewMode === "side-by-side" && (
               <div className="flex-1 grid grid-cols-2 gap-px bg-brand-light/30">
@@ -424,6 +433,7 @@ export default function OutputInterpreter({ html, css, format, convertedBlob, on
               </div>
             )}
           </div>
+        </div>
         </div>
       )}
 

@@ -33,6 +33,8 @@ export interface CompareResult {
   layoutScore: number;
   overallScore: number;
   pixelAccuracy: number;
+  comparisonMode?: string;
+  formatNote?: string;
   originalImageUrl?: string;
   convertedImageUrl?: string;
   diffImageUrl?: string;

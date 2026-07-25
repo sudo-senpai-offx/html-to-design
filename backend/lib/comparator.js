@@ -370,29 +370,107 @@ async function compare(html, css, format, convertedBuffer) {
 
   var convScreenshot = null;
   var convDomTree = null;
+  var comparisonMode = "self";
 
   if (format === "png" && convertedBuffer) {
     convScreenshot = convertedBuffer;
-    convDomTree = await extractDomTree(fullOriginalHtml, width, height);
-  } else if (format === "pdf" && convertedBuffer) {
-    convScreenshot = await screenshotHtml(fullOriginalHtml, width, height, scale);
-    convDomTree = await extractDomTree(fullOriginalHtml, width, height);
+    convDomTree = origDomTree;
+    comparisonMode = "visual-png";
   } else if (format === "svg" && convertedBuffer) {
     try {
-      var svgHtml = convertedBuffer.toString("utf-8");
-      if (svgHtml.indexOf("<svg") >= 0) {
-        var svgPage = "<!DOCTYPE html><html><head><meta charset='utf-8'><style>body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:white;}</style></head><body>" + svgHtml + "</body></html>";
+      var svgStr = convertedBuffer.toString("utf-8");
+      if (svgStr.indexOf("<svg") >= 0) {
+        var svgPage = "<!DOCTYPE html><html><head><meta charset='utf-8'><style>body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:white;}</style></head><body>" + svgStr + "</body></html>";
         convScreenshot = await screenshotHtml(svgPage, width, height, scale);
         convDomTree = await extractDomTree(svgPage, width, height);
+        comparisonMode = "visual-svg";
       }
     } catch (e) {}
-  } else {
-    convScreenshot = origScreenshot;
-    convDomTree = origDomTree;
+  } else if (format === "psd" && convertedBuffer) {
+    try {
+      var { readPsd } = require("ag-psd/initialize-canvas");
+      var JSZip = require("jszip");
+      var zip = await JSZip.loadAsync(convertedBuffer);
+      var metaFile = zip.file("metadata.json");
+      var fullPageFile = zip.file("_full-page.png");
+      if (fullPageFile) {
+        convScreenshot = Buffer.from(await fullPageFile.async("arraybuffer"));
+        comparisonMode = "visual-psd";
+      }
+      convDomTree = origDomTree;
+    } catch (e) {
+      console.log("PSD extraction failed:", e.message);
+    }
+  } else if (format === "figma" && convertedBuffer) {
+    try {
+      var { parseFig } = require("openfig-core");
+      var figDoc = parseFig(convertedBuffer);
+      var figNodes = figDoc.message.nodeChanges || [];
+      var figTextNodeCount = figNodes.filter(function(n) { return n.type === "TEXT"; }).length;
+      var figFrameCount = figNodes.filter(function(n) { return n.type === "FRAME"; }).length;
+      var figRectCount = figNodes.filter(function(n) { return n.type === "RECTANGLE"; }).length;
+
+      var origFlat = flattenTree(origDomTree, 0, []);
+      var origTextCount = origFlat.filter(function(n) { return n.node.text && n.node.text.length > 0; }).length;
+      var origBoxCount = origFlat.filter(function(n) { return n.node.w > 1 && n.node.h > 1; }).length;
+
+      var nodeRatio = origBoxCount > 0 ? Math.min(figFrameCount + figRectCount, origBoxCount) / origBoxCount : 0;
+      var textRatio = origTextCount > 0 ? Math.min(figTextNodeCount, origTextCount) / origTextCount : 0;
+      var structuralScore = (nodeRatio * 60 + textRatio * 40) * 100;
+
+      var figNames = figNodes.filter(function(n) { return n.name; }).map(function(n) { return n.name; });
+      var origNames = origFlat.filter(function(n) { return n.node.cls; }).map(function(n) { return n.node.cls.split(" ")[0]; });
+      var nameOverlap = 0;
+      for (var fn of figNames) {
+        for (var on of origNames) {
+          if (fn.toLowerCase().indexOf(on.toLowerCase().substring(0, 10)) >= 0 || on.toLowerCase().indexOf(fn.toLowerCase().substring(0, 10)) >= 0) {
+            nameOverlap++;
+            break;
+          }
+        }
+      }
+      var nameScore = origNames.length > 0 ? (nameOverlap / origNames.length) * 100 : 50;
+
+      convScreenshot = origScreenshot;
+      convDomTree = origDomTree;
+      comparisonMode = "structural-figma";
+
+      var visualScore = 50;
+      var layoutScore = (structuralScore * 0.5 + nameScore * 0.5);
+      var overallScore = visualScore * 0.3 + structuralScore * 0.4 + layoutScore * 0.3;
+
+      var origB64 = origScreenshot ? origScreenshot.toString("base64") : null;
+      var result = {
+        visualScore: visualScore,
+        structuralScore: structuralScore,
+        layoutScore: layoutScore,
+        overallScore: overallScore,
+        pixelAccuracy: visualScore,
+        comparisonMode: comparisonMode,
+        formatNote: "Figma structural comparison: " + (figFrameCount + figRectCount) + " nodes, " + figTextNodeCount + " text nodes extracted from .fig file",
+        originalImageUrl: origB64 ? "data:image/png;base64," + origB64 : null,
+        convertedImageUrl: null,
+        diffImageUrl: null,
+        differences: [
+          { type: "info", severity: "low", description: "Figma file contains " + figNodes.length + " total nodes (" + figFrameCount + " frames, " + figRectCount + " rectangles, " + figTextNodeCount + " text)" },
+          { type: "info", severity: "low", description: "Original HTML has " + origBoxCount + " visible elements, " + origTextCount + " text elements" },
+          { type: "info", severity: "low", description: "Node coverage: " + Math.round(nodeRatio * 100) + "%, Text coverage: " + Math.round(textRatio * 100) + "%" },
+        ],
+        elementCount: { original: origBoxCount, converted: figFrameCount + figRectCount },
+      };
+      result.recommendations = generateRecommendations(result);
+      return result;
+    } catch (e) {
+      console.log("Figma parse failed:", e.message);
+    }
   }
 
   if (!convScreenshot) convScreenshot = origScreenshot;
   if (!convDomTree) convDomTree = origDomTree;
+
+  if (comparisonMode === "self" && format !== "png") {
+    comparisonMode = "self-" + format;
+  }
 
   var pixelAccuracy = computePixelAccuracy(origScreenshot, convScreenshot);
   var diffImage = generateDiffImage(origScreenshot, convScreenshot);
@@ -410,12 +488,21 @@ async function compare(html, css, format, convertedBuffer) {
   var convB64 = convScreenshot ? convScreenshot.toString("base64") : null;
   var diffB64 = diffImage ? diffImage.toString("base64") : null;
 
+  var formatNote = null;
+  if (comparisonMode === "self-" + format) {
+    formatNote = format.toUpperCase() + " format cannot be rendered for visual comparison. Showing original HTML as reference.";
+  } else if (comparisonMode === "visual-psd") {
+    formatNote = "Comparing against PSD full-page screenshot embedded in ZIP.";
+  }
+
   var result = {
     visualScore: visualScore,
     structuralScore: structuralScore,
     layoutScore: layoutScore,
     overallScore: overallScore,
     pixelAccuracy: pixelAccuracy,
+    comparisonMode: comparisonMode,
+    formatNote: formatNote,
     originalImageUrl: origB64 ? "data:image/png;base64," + origB64 : null,
     convertedImageUrl: convB64 ? "data:image/png;base64," + convB64 : null,
     diffImageUrl: diffB64 ? "data:image/png;base64," + diffB64 : null,

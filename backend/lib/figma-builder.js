@@ -592,6 +592,105 @@ function flattenTree(doc) {
   return removed;
 }
 
+function generateThumbnail(domTree, pageWidth, pageHeight, doc) {
+  try {
+    var { createCanvas } = require("canvas");
+    var tw = 400, th = 225;
+    var canvas = createCanvas(tw, th);
+    var ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, tw, th);
+
+    var scaleX = tw / Math.max(pageWidth, 1);
+    var scaleY = th / Math.max(pageHeight, 1);
+    var scale = Math.min(scaleX, scaleY);
+
+    ctx.save();
+    ctx.scale(scale, scale);
+
+    function drawNode(node, offsetX, offsetY) {
+      if (!node) return;
+      var props = node.props || {};
+      var x = (node.x || 0) + offsetX;
+      var y = (node.y || 0) + offsetY;
+      var w = node.w || 0;
+      var h = node.h || 0;
+      if (w < 1 || h < 1) return;
+
+      var display = props["display"] || "block";
+      var visibility = props["visibility"] || "visible";
+      var opacity = parseFloat(props["opacity"]);
+      if (display === "none" || visibility === "hidden") return;
+      if (!isNaN(opacity) && opacity < 0.01) return;
+
+      var bgColor = props["background-color"];
+      if (bgColor && bgColor !== "transparent") {
+        var m = bgColor.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+        if (m) {
+          ctx.save();
+          ctx.globalAlpha = opacity || 1;
+          ctx.fillStyle = "rgb(" + m[1] + "," + m[2] + "," + m[3] + ")";
+          var radius = parseFloat(props["border-radius"]) || 0;
+          if (radius > 0) {
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, radius);
+            ctx.fill();
+          } else {
+            ctx.fillRect(x, y, w, h);
+          }
+          ctx.restore();
+        }
+      }
+
+      var borderWidth = parseFloat(props["border-top-width"]) || 0;
+      if (borderWidth > 0 && props["border-top-color"] && props["border-top-color"] !== "transparent") {
+        ctx.save();
+        ctx.strokeStyle = props["border-top-color"];
+        ctx.lineWidth = borderWidth;
+        ctx.strokeRect(x + borderWidth / 2, y + borderWidth / 2, w - borderWidth, h - borderWidth);
+        ctx.restore();
+      }
+
+      var text = "";
+      for (var ci = 0; ci < (node.children || []).length; ci++) {
+        var child = node.children[ci];
+        if (child && child.text && child.text.length > 0) {
+          text = child.text;
+          break;
+        }
+      }
+      if (!text && node.text) text = node.text;
+
+      if (text && text.length > 0) {
+        var fontSize = parseFloat(props["font-size"]) || parseFloat((node.props || {})["font-size"]) || 14;
+        var color = props["color"] || "#000000";
+        ctx.save();
+        ctx.fillStyle = color;
+        ctx.font = fontSize + "px sans-serif";
+        ctx.textBaseline = "top";
+        var maxW = w - 8;
+        var displayText = text.length > 40 ? text.substring(0, 37) + "..." : text;
+        ctx.fillText(displayText, x + 4, y + 4, maxW);
+        ctx.restore();
+      }
+
+      if (node.children) {
+        for (var i = 0; i < node.children.length; i++) {
+          drawNode(node.children[i], offsetX, offsetY);
+        }
+      }
+    }
+
+    if (domTree) drawNode(domTree, 0, 0);
+    ctx.restore();
+
+    var buf = canvas.toBuffer("image/png");
+    doc.thumbnail = new Uint8Array(buf);
+  } catch (e) {
+    // keep default thumbnail on error
+  }
+}
+
 async function buildDocument(domTree, pageWidth, pageHeight, pageName, assetManager, rasterizedSvgs) {
   var ctx = { nextId: 500, pageGuid: null, pendingImages: [] };
   var doc = createEmptyFigDoc();
@@ -617,6 +716,10 @@ async function buildDocument(domTree, pageWidth, pageHeight, pageName, assetMana
   doc.message.nodeChanges.push(...allNodes);
   injectPendingImages(doc, ctx.pendingImages, assetManager, rasterizedSvgs);
   flattenTree(doc);
+
+  generateThumbnail(domTree, pageWidth, pageHeight, doc);
+  doc.meta = { file_name: pageName || "HTML Export", version: 1 };
+
   return doc;
 }
 
