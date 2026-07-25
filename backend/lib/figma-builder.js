@@ -570,79 +570,107 @@ function flattenTree(doc) {
 function buildDesignTokens(doc, canvasGuid, domTree, ctx) {
   var tokens = extractDesignTokens(domTree);
 
-  var varSetGuid = guid(1, ctx.nextId++);
-  var modeId = guid(1, ctx.nextId++);
+  var posIdx = 0;
 
+  var colorsFrameGuid = guid(1, ctx.nextId++);
   doc.message.nodeChanges.push({
-    guid: varSetGuid, type: "VARIABLE_SET", name: "Design Tokens",
+    guid: colorsFrameGuid, type: "FRAME", name: "Colors",
     phase: "CREATED",
     parentIndex: { guid: canvasGuid, position: "!" },
-    strokeAlign: "CENTER", strokeJoin: "BEVEL",
-    variableSetModes: [{ id: modeId, name: "Default", sortPosition: "!" }],
+    visible: true, opacity: 1,
+    size: { x: tokens.colors.length * 60, y: 80 },
+    transform: makePos(0, 0),
+    fillPaints: [],
+    strokeWeight: 0, strokeAlign: "OUTSIDE",
+    frameMaskDisabled: false,
+    stackMode: "HORIZONTAL",
+    stackSpacing: 8,
+    pluginData: pluginData(false),
   });
 
-  var posIdx = 0;
   for (var hex of tokens.colors) {
     var c = parseColor(hex);
     if (!c) continue;
-    var parts = hex.replace("#", "").match(/.{2}/g);
-    var colorName = "Color/" + parts.map(function(p) { return parseInt(p, 16); }).join("-");
     doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "VARIABLE", name: colorName,
+      guid: guid(1, ctx.nextId++), type: "FRAME", name: hex,
       phase: "CREATED",
-      parentIndex: { guid: canvasGuid, position: zOrderChar(posIdx++) },
-      strokeAlign: "CENTER", strokeJoin: "BEVEL",
-      variableSetID: varSetGuid,
-      variableResolvedType: "COLOR",
-      variableDataValues: {
-        entries: [{ modeID: modeId, variableData: { value: { colorValue: c }, dataType: "COLOR", resolvedDataType: "COLOR" } }],
-      },
-      variableScopes: ["ALL_SCOPES"],
+      parentIndex: { guid: colorsFrameGuid, position: zOrderChar(posIdx++) },
+      visible: true, opacity: 1,
+      size: { x: 50, y: 50 },
+      transform: makePos(0, 0),
+      fillPaints: [{ type: "SOLID", color: c, opacity: 1, visible: true, blendMode: "NORMAL" }],
+      strokeWeight: 1,
+      strokeAlign: "INSIDE",
+      strokePaints: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 0.1 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
+      cornerRadius: 8,
+      frameMaskDisabled: false,
+      pluginData: pluginData(false),
     });
   }
+
+  var spacingFrameGuid = guid(1, ctx.nextId++);
+  doc.message.nodeChanges.push({
+    guid: spacingFrameGuid, type: "FRAME", name: "Spacing",
+    phase: "CREATED",
+    parentIndex: { guid: canvasGuid, position: "!" },
+    visible: true, opacity: 1,
+    size: { x: 300, y: 40 },
+    transform: makePos(0, 100),
+    fillPaints: [],
+    strokeWeight: 0, strokeAlign: "OUTSIDE",
+    frameMaskDisabled: false,
+    stackMode: "HORIZONTAL",
+    stackSpacing: 4,
+    pluginData: pluginData(false),
+  });
 
   for (var sp of tokens.spacing) {
     doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "VARIABLE", name: "Space/" + sp,
+      guid: guid(1, ctx.nextId++), type: "RECTANGLE", name: "Space/" + sp,
       phase: "CREATED",
-      parentIndex: { guid: canvasGuid, position: zOrderChar(posIdx++) },
-      strokeAlign: "CENTER", strokeJoin: "BEVEL",
-      variableSetID: varSetGuid,
-      variableResolvedType: "FLOAT",
-      variableDataValues: {
-        entries: [{ modeID: modeId, variableData: { value: { floatValue: sp }, dataType: "FLOAT", resolvedDataType: "FLOAT" } }],
-      },
-      variableScopes: ["ALL_SCOPES"],
+      parentIndex: { guid: spacingFrameGuid, position: zOrderChar(posIdx++) },
+      visible: true, opacity: 1,
+      size: { x: Math.max(sp, 2), y: 20 },
+      transform: makePos(0, 0),
+      fillPaints: [{ type: "SOLID", color: { r: 0.3, g: 0.5, b: 0.9, a: 1 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
+      strokeWeight: 0, strokeAlign: "OUTSIDE",
+      cornerRadius: 2,
+      frameMaskDisabled: true,
+      pluginData: pluginData(false),
     });
   }
+
+  var radiusFrameGuid = guid(1, ctx.nextId++);
+  doc.message.nodeChanges.push({
+    guid: radiusFrameGuid, type: "FRAME", name: "Radii",
+    phase: "CREATED",
+    parentIndex: { guid: canvasGuid, position: "!" },
+    visible: true, opacity: 1,
+    size: { x: 300, y: 50 },
+    transform: makePos(0, 160),
+    fillPaints: [],
+    strokeWeight: 0, strokeAlign: "OUTSIDE",
+    frameMaskDisabled: false,
+    stackMode: "HORIZONTAL",
+    stackSpacing: 8,
+    pluginData: pluginData(false),
+  });
 
   for (var r of tokens.radius) {
     doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "VARIABLE", name: "Radius/" + r,
+      guid: guid(1, ctx.nextId++), type: "RECTANGLE", name: "Radius/" + r,
       phase: "CREATED",
-      parentIndex: { guid: canvasGuid, position: zOrderChar(posIdx++) },
-      strokeAlign: "CENTER", strokeJoin: "BEVEL",
-      variableSetID: varSetGuid,
-      variableResolvedType: "FLOAT",
-      variableDataValues: {
-        entries: [{ modeID: modeId, variableData: { value: { floatValue: r }, dataType: "FLOAT", resolvedDataType: "FLOAT" } }],
-      },
-      variableScopes: ["ALL_SCOPES"],
-    });
-  }
-
-  for (var font of tokens.fonts) {
-    doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "VARIABLE", name: "Font/" + font.substring(0, 30),
-      phase: "CREATED",
-      parentIndex: { guid: canvasGuid, position: zOrderChar(posIdx++) },
-      strokeAlign: "CENTER", strokeJoin: "BEVEL",
-      variableSetID: varSetGuid,
-      variableResolvedType: "STRING",
-      variableDataValues: {
-        entries: [{ modeID: modeId, variableData: { value: { stringValue: font }, dataType: "STRING", resolvedDataType: "STRING" } }],
-      },
-      variableScopes: ["ALL_SCOPES"],
+      parentIndex: { guid: radiusFrameGuid, position: zOrderChar(posIdx++) },
+      visible: true, opacity: 1,
+      size: { x: 40, y: 40 },
+      transform: makePos(0, 0),
+      fillPaints: [{ type: "SOLID", color: { r: 0.8, g: 0.4, b: 0.2, a: 1 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
+      strokeWeight: 1,
+      strokeAlign: "INSIDE",
+      strokePaints: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 0.15 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
+      cornerRadius: Math.min(r, 20),
+      frameMaskDisabled: true,
+      pluginData: pluginData(false),
     });
   }
 }
@@ -692,15 +720,19 @@ function extractTextStyles(domTree) {
 function buildTextStyles(doc, canvasGuid, domTree, ctx) {
   var textStyles = extractTextStyles(domTree);
 
-  var styleSetGuid = guid(1, ctx.nextId++);
+  var stylesFrameGuid = guid(1, ctx.nextId++);
   doc.message.nodeChanges.push({
-    guid: styleSetGuid, type: "COMPONENT_SET", name: "Text Styles",
+    guid: stylesFrameGuid, type: "FRAME", name: "Text Styles",
     phase: "CREATED",
     parentIndex: { guid: canvasGuid, position: "!" },
     visible: true, opacity: 1,
-    size: { x: 200, y: 50 },
-    transform: { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 },
+    size: { x: 400, y: textStyles.length * 60 },
+    transform: makePos(0, 240),
+    fillPaints: [],
+    strokeWeight: 0, strokeAlign: "OUTSIDE",
     frameMaskDisabled: false,
+    stackMode: "VERTICAL",
+    stackSpacing: 4,
     pluginData: pluginData(false),
   });
 
@@ -708,17 +740,19 @@ function buildTextStyles(doc, canvasGuid, domTree, ctx) {
     var ts = textStyles[i];
     var styleName = ts.family + " " + ts.style + " " + ts.size + "px";
 
-    var compGuid = guid(1, ctx.nextId++);
+    var rowGuid = guid(1, ctx.nextId++);
     doc.message.nodeChanges.push({
-      guid: compGuid, type: "COMPONENT", name: styleName.substring(0, 50),
+      guid: rowGuid, type: "FRAME", name: styleName.substring(0, 50),
       phase: "CREATED",
-      parentIndex: { guid: styleSetGuid, position: zOrderChar(i) },
+      parentIndex: { guid: stylesFrameGuid, position: zOrderChar(i) },
       visible: true, opacity: 1,
-      size: { x: Math.max(ts.size * styleName.length * 0.5, 100), y: ts.lineHeight * 1.5 },
-      transform: makePos(0, i * (ts.lineHeight * 1.5 + 20)),
+      size: { x: 400, y: Math.max(ts.lineHeight * 1.5, 30) },
+      transform: makePos(0, 0),
       fillPaints: [],
       strokeWeight: 0, strokeAlign: "OUTSIDE",
       frameMaskDisabled: false,
+      stackMode: "HORIZONTAL",
+      stackSpacing: 12,
       pluginData: pluginData(false),
     });
 
@@ -726,21 +760,38 @@ function buildTextStyles(doc, canvasGuid, domTree, ctx) {
       guid: guid(1, ctx.nextId++), type: "TEXT",
       name: styleName.substring(0, 50),
       phase: "CREATED",
-      parentIndex: { guid: compGuid, position: zOrderChar(0) },
+      parentIndex: { guid: rowGuid, position: zOrderChar(0) },
       visible: true, opacity: 1,
-      size: { x: Math.max(ts.size * styleName.length * 0.5, 100), y: ts.lineHeight },
+      size: { x: 300, y: ts.lineHeight },
       transform: makePos(0, 0),
-      textData: { characters: styleName },
+      textData: { characters: "Aa " + styleName },
       fontName: { family: ts.family, style: ts.style, postscript: "" },
-      fontSize: ts.size,
+      fontSize: Math.min(ts.size, 32),
       lineHeight: { value: ts.lineHeight, units: "PIXELS" },
       letterSpacing: { value: ts.letterSpacing, units: "PIXELS" },
       textAutoResize: "WIDTH_AND_HEIGHT",
       textAlignHorizontal: "LEFT",
-      textAlignVertical: "TOP",
+      textAlignVertical: "CENTER",
       fillPaints: [{ type: "SOLID", color: ts.color, opacity: 1, visible: true, blendMode: "NORMAL" }],
       strokeWeight: 0, strokeAlign: "OUTSIDE",
       pluginData: pluginData(true),
+    });
+
+    doc.message.nodeChanges.push({
+      guid: guid(1, ctx.nextId++), type: "RECTANGLE",
+      name: "Swatch",
+      phase: "CREATED",
+      parentIndex: { guid: rowGuid, position: zOrderChar(1) },
+      visible: true, opacity: 1,
+      size: { x: 20, y: 20 },
+      transform: makePos(0, 0),
+      fillPaints: [{ type: "SOLID", color: ts.color, opacity: 1, visible: true, blendMode: "NORMAL" }],
+      strokeWeight: 1,
+      strokeAlign: "INSIDE",
+      strokePaints: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 0.1 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
+      cornerRadius: 4,
+      frameMaskDisabled: true,
+      pluginData: pluginData(false),
     });
   }
 }
