@@ -40,7 +40,7 @@ const EXTRACT_DOM_SCRIPT = `
       if (child) children.push(child);
     }
     return {
-      tag: tag, cls: el.className || '', id: el.id || '', text: text,
+      tag: tag, cls: typeof el.className === "string" ? el.className : (el.className && el.className.baseVal ? el.className.baseVal : ""), id: el.id || '', text: text,
       x: Math.round(rect.x), y: Math.round(rect.y),
       w: Math.round(rect.width), h: Math.round(rect.height),
       props: props, children: children,
