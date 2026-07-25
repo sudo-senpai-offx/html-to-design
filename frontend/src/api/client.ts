@@ -19,12 +19,25 @@ export interface UrlImportResult {
   url: string;
 }
 
+export interface PdfOptions {
+  format?: string;
+  landscape?: boolean;
+  printBackground?: boolean;
+  headerFooter?: boolean;
+  margin?: string;
+}
+
 export async function convertToFormat(
   format: string,
   html: string,
-  options: ConvertOptions = {}
+  options: ConvertOptions = {},
+  pdfOptions?: PdfOptions
 ): Promise<Blob> {
-  const response = await api.post(`/convert/${format}`, { html, ...options }, {
+  const payload: Record<string, unknown> = { html, ...options };
+  if (pdfOptions && format === 'pdf') {
+    Object.assign(payload, pdfOptions);
+  }
+  const response = await api.post(`/convert/${format}`, payload, {
     responseType: 'blob',
   });
   return response.data;

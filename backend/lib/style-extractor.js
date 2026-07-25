@@ -76,16 +76,42 @@ function extractStyles(props, width, height) {
   }
 
   var filter = props["filter"] || "none";
-  var hasBlur = filter !== "none" && filter.includes("blur");
   var blurAmount = 0;
-  if (hasBlur) {
+  var brightnessAmount = 1;
+  var contrastAmount = 1;
+  var saturateAmount = 1;
+  var grayscaleAmount = 0;
+  var sepiaAmount = 0;
+  var hueRotateAmount = 0;
+
+  if (filter !== "none") {
     var bm = filter.match(/blur\(([\d.]+)px\)/);
     if (bm) blurAmount = parseFloat(bm[1]);
+
+    var brm = filter.match(/brightness\(([\d.]+)\)/);
+    if (brm) brightnessAmount = parseFloat(brm[1]);
+
+    var cm = filter.match(/contrast\(([\d.]+)\)/);
+    if (cm) contrastAmount = parseFloat(cm[1]);
+
+    var sm = filter.match(/saturate\(([\d.]+)\)/);
+    if (sm) saturateAmount = parseFloat(sm[1]);
+
+    var gsm = filter.match(/grayscale\(([\d.]+)\)/);
+    if (gsm) grayscaleAmount = parseFloat(gsm[1]);
+
+    var stm = filter.match(/sepia\(([\d.]+)\)/);
+    if (stm) sepiaAmount = parseFloat(stm[1]);
+
+    var hrm = filter.match(/hue-rotate\(([\d.-]+)deg\)/);
+    if (hrm) hueRotateAmount = parseFloat(hrm[1]);
   }
 
   var translate = null;
   var rotate = null;
-  var scale = null;
+  var scaleVal = null;
+  var transformMatrix = null;
+
   if (props["translate"]) {
     var tm = props["translate"].match(/([\d.]+)px\s*([\d.]+)px/);
     if (tm) translate = { x: parseFloat(tm[1]), y: parseFloat(tm[2]) };
@@ -95,15 +121,49 @@ function extractStyles(props, width, height) {
     if (rm) rotate = parseFloat(rm[1]);
   }
   if (props["scale"]) {
-    var sm = props["scale"].match(/([\d.]+)\s*([\d.]+)/);
-    if (sm) scale = { x: parseFloat(sm[1]), y: parseFloat(sm[2]) };
+    var sm2 = props["scale"].match(/([\d.]+)\s*([\d.]+)/);
+    if (sm2) scaleVal = { x: parseFloat(sm2[1]), y: parseFloat(sm2[2]) };
+  }
+
+  var transformStr = props["transform"];
+  if (transformStr && transformStr !== "none") {
+    var matrixMatch = transformStr.match(/matrix\(([\d.,\s]+)\)/);
+    if (matrixMatch) {
+      var vals = matrixMatch[1].split(/[\s,]+/).map(Number);
+      if (vals.length === 6) {
+        transformMatrix = {
+          a: vals[0], b: vals[1], c: vals[2],
+          d: vals[3], e: vals[4], f: vals[5],
+        };
+        if (!rotate && vals[0] !== undefined) {
+          rotate = Math.atan2(vals[1], vals[0]) * 180 / Math.PI;
+        }
+      }
+    }
+
+    var translateMatch = transformStr.match(/translate\(([\d.]+)px?\s*,?\s*([\d.]+)px?\)/);
+    if (translateMatch && !translate) {
+      translate = { x: parseFloat(translateMatch[1]), y: parseFloat(translateMatch[2]) };
+    }
+
+    var rotateMatch = transformStr.match(/rotate\(([\d.-]+)deg\)/);
+    if (rotateMatch && !rotate) {
+      rotate = parseFloat(rotateMatch[1]);
+    }
+
+    var scaleMatch = transformStr.match(/scale\(([\d.]+)(?:\s*,\s*([\d.]+))?\)/);
+    if (scaleMatch && !scaleVal) {
+      scaleVal = { x: parseFloat(scaleMatch[1]), y: parseFloat(scaleMatch[2] || scaleMatch[1]) };
+    }
   }
 
   return {
     fills, stroke, effects, textShadowEffects, radius, opacity, bgImageUrl,
     textProps, display, layoutMode, flexDir, justifyContent, alignItems, alignSelf,
     flexWrap, gap, padding, overflow, visibility, position, zIndex,
-    outline, blurAmount, translate, rotate, scale,
+    outline, blurAmount, translate, rotate, scale: scaleVal, transformMatrix,
+    brightnessAmount, contrastAmount, saturateAmount, grayscaleAmount,
+    sepiaAmount, hueRotateAmount,
   };
 }
 

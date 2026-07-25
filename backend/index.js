@@ -219,6 +219,16 @@ app.post("/api/convert/:format", rateLimit(10, 60000), upload.single("html"), as
       });
     }
 
+    const pdfOptions = {};
+    if (format === "pdf") {
+      const allowedFormats = ["A3", "A4", "A5", "Legal", "Letter", "Tabloid"];
+      pdfOptions.format = allowedFormats.includes(req.body.format) ? req.body.format : "A4";
+      pdfOptions.landscape = req.body.landscape === "true" || req.body.landscape === true;
+      pdfOptions.printBackground = req.body.printBackground !== "false";
+      pdfOptions.headerFooter = req.body.headerFooter !== "false";
+      pdfOptions.margin = req.body.margin || "15mm";
+    }
+
     console.log(`[${jobId}] Converting to ${format} (${width}x${height} @${scale}x)`);
 
     const result = await convertTo(format, fullHtml, {
@@ -226,6 +236,7 @@ app.post("/api/convert/:format", rateLimit(10, 60000), upload.single("html"), as
       height,
       scale,
       jobId,
+      ...pdfOptions,
     });
 
     const ext = { png: "png", pdf: "pdf", svg: "svg", figma: "fig", psd: "psd" }[format];

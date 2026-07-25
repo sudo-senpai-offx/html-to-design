@@ -32,11 +32,14 @@ var EXTRACT_SCRIPT = `
       "text-shadow","transform","transform-origin",
       "translate","rotate","scale",
       "grid-template-columns","grid-template-rows","grid-column-gap","grid-row-gap",
-      "grid-auto-flow","aspect-ratio",
+      "grid-auto-flow","grid-auto-columns","grid-auto-rows",
+      "grid-column-start","grid-column-end","grid-row-start","grid-row-end",
+      "aspect-ratio",
       "outline-width","outline-color","outline-style","outline-offset",
       "filter","backdrop-filter",
       "mix-blend-mode","background-blend-mode",
-      "column-gap","row-gap"
+      "column-gap","row-gap",
+      "aspect-ratio","container-type",
     ];
     for (var i = 0; i < important.length; i++) {
       var val = cs.getPropertyValue(important[i]);

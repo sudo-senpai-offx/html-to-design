@@ -27,6 +27,7 @@ function extractDesignTokens(domTree) {
   var colorMap = new Map();
   var spacingSet = new Set();
   var radiusSet = new Set();
+  var fontFamilySet = new Set();
 
   function walk(el) {
     if (!el) return;
@@ -35,6 +36,10 @@ function extractDesignTokens(domTree) {
       props["background-color"],
       props["color"],
       props["border-color"],
+      props["border-top-color"],
+      props["border-right-color"],
+      props["border-bottom-color"],
+      props["border-left-color"],
     ];
     for (var c of colors) {
       if (c && c !== "transparent" && c !== "currentColor" && c !== "inherit") {
@@ -47,6 +52,26 @@ function extractDesignTokens(domTree) {
         }
       }
     }
+
+    var bgImage = props["background-image"];
+    if (bgImage && (bgImage.includes("linear-gradient") || bgImage.includes("radial-gradient"))) {
+      var stopsMatch = bgImage.match(/(rgba?\([^)]+\)|#[0-9a-fA-F]{3,8}|transparent)\s*([\d.]+)%?/g);
+      if (stopsMatch) {
+        for (var s of stopsMatch) {
+          var cm = s.match(/(rgba?\([^)]+\)|#[0-9a-fA-F]{3,8})/);
+          if (cm) {
+            var parsed2 = parseColor(cm[1]);
+            if (parsed2 && parsed2.a > 0.01) {
+              var hex2 = "#" + [parsed2.r, parsed2.g, parsed2.b].map(function(v) {
+                return Math.round(v * 255).toString(16).padStart(2, "0");
+              }).join("");
+              colorMap.set(hex2.toLowerCase(), (colorMap.get(hex2.toLowerCase()) || 0) + 1);
+            }
+          }
+        }
+      }
+    }
+
     ["margin-top", "margin-bottom", "margin-left", "margin-right",
      "padding-top", "padding-bottom", "padding-left", "padding-right",
      "gap", "row-gap", "column-gap"].forEach(function(p) {
@@ -55,19 +80,25 @@ function extractDesignTokens(domTree) {
     });
     var rad = parseFloat(props["border-radius"]);
     if (rad && rad > 0 && rad <= 100) radiusSet.add(rad);
+
+    if (props["font-family"]) {
+      fontFamilySet.add(props["font-family"]);
+    }
+
     if (el.children) el.children.forEach(walk);
   }
   walk(domTree);
 
   var sorted = Array.from(colorMap.entries())
     .sort(function(a, b) { return b[1] - a[1]; })
-    .slice(0, 20)
+    .slice(0, 30)
     .map(function(e) { return e[0]; });
 
-  var sortedSpacing = Array.from(spacingSet).sort(function(a, b) { return a - b; }).slice(0, 15);
-  var sortedRadius = Array.from(radiusSet).sort(function(a, b) { return a - b; }).slice(0, 8);
+  var sortedSpacing = Array.from(spacingSet).sort(function(a, b) { return a - b; }).slice(0, 20);
+  var sortedRadius = Array.from(radiusSet).sort(function(a, b) { return a - b; }).slice(0, 10);
+  var sortedFonts = Array.from(fontFamilySet).slice(0, 5);
 
-  return { colors: sorted, spacing: sortedSpacing, radius: sortedRadius };
+  return { colors: sorted, spacing: sortedSpacing, radius: sortedRadius, fonts: sortedFonts };
 }
 
 function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, doc, parentAutoLayout, parentSvgRastered, ctx) {
@@ -112,6 +143,8 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
   var isTextInput = tag === "input" || tag === "textarea" || tag === "select";
   var isButton = tag === "button" || cls.includes("btn") || cls.includes("button");
   var isImage = tag === "img";
+  var isLink = tag === "a";
+  var isListItem = tag === "li";
 
   if (parentSvgRastered && isSvg && el.svgRasterId === undefined) {
     return [];
@@ -183,6 +216,20 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
       if (layout.stackPaddingRight > 0) node.stackPaddingRight = layout.stackPaddingRight;
       if (layout.stackPaddingBottom > 0) node.stackPaddingBottom = layout.stackPaddingBottom;
       if (layout.stackPaddingLeft > 0) node.stackPaddingLeft = layout.stackPaddingLeft;
+
+      if (layout.isGrid && layout.gridInfo) {
+        node.name = name.substring(0, 40) + " [Grid]";
+      }
+    }
+
+    if (isButton) {
+      node.name = name.substring(0, 40) + " [Button]";
+    }
+    if (isLink) {
+      node.name = name.substring(0, 40) + " [Link]";
+    }
+    if (isListItem) {
+      node.name = name.substring(0, 40) + " [List Item]";
     }
 
     nodes.push(node);
@@ -194,6 +241,23 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
       else if (bgSize === "cover") bgScaleMode = "FILL";
       else if (bgSize === "auto") bgScaleMode = "TILE";
       ctx.pendingImages.push({ url: s.bgImageUrl, nodeGuid: containerGuid, scaleMode: bgScaleMode });
+    }
+
+    if (s.blurAmount > 0) {
+      if (!node.effects) node.effects = [];
+      node.effects.push({
+        type: "BACKGROUND_BLUR",
+        visible: true,
+        opacity: 0.5,
+        radius: s.blurAmount,
+        blendMode: "NORMAL",
+      });
+    }
+
+    if (s.outline) {
+      node.strokeWeight = s.outline.weight;
+      node.strokeAlign = "OUTSIDE";
+      node.strokePaints = [{ type: "SOLID", color: s.outline.color, opacity: 1, visible: true, blendMode: "NORMAL" }];
     }
   }
 
@@ -209,7 +273,7 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
       containerGuid = guid(1, ctx.nextId++);
       nodes.push({
         guid: containerGuid, type: "RECTANGLE",
-        name: el.alt || "Image",
+        name: (el.alt || "Image").substring(0, 50),
         phase: "CREATED",
         parentIndex: { guid: parentGuid, position: zPos },
         visible: true, opacity: s.opacity,
@@ -231,7 +295,7 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
       containerGuid = guid(1, ctx.nextId++);
       nodes.push({
         guid: containerGuid, type: "RECTANGLE",
-        name: el.figmaName || "SVG Icon",
+        name: (el.figmaName || "SVG Icon").substring(0, 50),
         phase: "CREATED",
         parentIndex: { guid: parentGuid, position: zPos },
         visible: true, opacity: s.opacity,
@@ -269,7 +333,7 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
     if (displayVal) {
       nodes.push({
         guid: guid(1, ctx.nextId++), type: "TEXT",
-        name: displayVal.substring(0, 40),
+        name: ("Input: " + displayVal).substring(0, 50),
         phase: "CREATED",
         parentIndex: { guid: containerGuid || parentGuid, position: zOrderChar(0) },
         visible: true, opacity: s.opacity,
@@ -293,7 +357,7 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
   if (isButton && hasText) {
     nodes.push({
       guid: guid(1, ctx.nextId++), type: "TEXT",
-      name: el.text.substring(0, 40),
+      name: el.text.substring(0, 50),
       phase: "CREATED",
       parentIndex: { guid: containerGuid || parentGuid, position: zOrderChar(0) },
       visible: true, opacity: s.opacity,
@@ -362,6 +426,11 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
       textY = relY;
     }
 
+    var textDecoration = undefined;
+    if (s.textProps && s.textProps.decoration) {
+      textDecoration = s.textProps.decoration;
+    }
+
     nodes.push({
       guid: guid(1, ctx.nextId++), type: "TEXT",
       name: displayText.substring(0, 60),
@@ -380,7 +449,7 @@ function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, 
       textAlignVertical: "TOP",
       fillPaints: textFill,
       strokeWeight: 0, strokeAlign: "OUTSIDE",
-      textDecoration: s.textProps ? s.textProps.decoration : undefined,
+      textDecoration: textDecoration,
       truncation: textTruncation,
       effects: allEffects.length > 0 ? allEffects : undefined,
       pluginData: pluginData(true),
@@ -517,9 +586,9 @@ function buildDesignTokens(doc, canvasGuid, domTree, ctx) {
     var c = parseColor(hex);
     if (!c) continue;
     var parts = hex.replace("#", "").match(/.{2}/g);
-    var name = "Color/" + parts.map(function(p) { return parseInt(p, 16); }).join("-");
+    var colorName = "Color/" + parts.map(function(p) { return parseInt(p, 16); }).join("-");
     doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "VARIABLE", name: name,
+      guid: guid(1, ctx.nextId++), type: "VARIABLE", name: colorName,
       phase: "CREATED",
       parentIndex: { guid: canvasGuid, position: zOrderChar(posIdx++) },
       strokeAlign: "CENTER", strokeJoin: "BEVEL",
@@ -557,6 +626,21 @@ function buildDesignTokens(doc, canvasGuid, domTree, ctx) {
       variableResolvedType: "FLOAT",
       variableDataValues: {
         entries: [{ modeID: modeId, variableData: { value: { floatValue: r }, dataType: "FLOAT", resolvedDataType: "FLOAT" } }],
+      },
+      variableScopes: ["ALL_SCOPES"],
+    });
+  }
+
+  for (var font of tokens.fonts) {
+    doc.message.nodeChanges.push({
+      guid: guid(1, ctx.nextId++), type: "VARIABLE", name: "Font/" + font.substring(0, 30),
+      phase: "CREATED",
+      parentIndex: { guid: canvasGuid, position: zOrderChar(posIdx++) },
+      strokeAlign: "CENTER", strokeJoin: "BEVEL",
+      variableSetID: varSetGuid,
+      variableResolvedType: "STRING",
+      variableDataValues: {
+        entries: [{ modeID: modeId, variableData: { value: { stringValue: font }, dataType: "STRING", resolvedDataType: "STRING" } }],
       },
       variableScopes: ["ALL_SCOPES"],
     });

@@ -5,7 +5,7 @@ function detectAutoLayout(el, childCount) {
   var justifyContent = props["justify-content"] || "flex-start";
   var alignItems = props["align-items"] || "stretch";
   var flexWrap = props["flex-wrap"] || "nowrap";
-  var gap = parseFloat(props["gap"]) || parseFloat(props["column-gap"]) || parseFloat(props["row-gap"]) || parseFloat(props["grid-column-gap"]) || 0;
+  var gap = parseFloat(props["gap"]) || parseFloat(props["column-gap"]) || parseFloat(props["row-gap"]) || parseFloat(props["grid-column-gap"]) || parseFloat(props["grid-row-gap"]) || 0;
   var paddingTop = parseFloat(props["padding-top"]) || 0;
   var paddingRight = parseFloat(props["padding-right"]) || 0;
   var paddingBottom = parseFloat(props["padding-bottom"]) || 0;
@@ -16,24 +16,52 @@ function detectAutoLayout(el, childCount) {
   var stackWrapEnabled = false;
 
   var stackMode = "NONE";
+  var gridInfo = null;
+
   if (isFlex) {
     stackMode = (flexDir === "column" || flexDir === "column-reverse") ? "VERTICAL" : "HORIZONTAL";
+    if (flexWrap === "wrap" || flexWrap === "wrap-reverse") {
+      stackWrapEnabled = true;
+    }
   } else if (isGrid) {
     var gridCols = props["grid-template-columns"] || "";
     var gridRows = props["grid-template-rows"] || "";
-    var colCount = (gridCols.match(/repeat\(\s*(\d+)/) || [])[1];
-    if (!colCount) colCount = (gridCols.match(/\d+/g) || []).length;
-    var rowCount = (gridRows.match(/repeat\(\s*(\d+)/) || [])[1];
-    if (!rowCount) rowCount = (gridRows.match(/\d+/g) || []).length;
+    var gridAutoFlow = props["grid-auto-flow"] || "row";
 
-    if (rowCount > colCount) {
-      stackMode = "VERTICAL";
+    var colCount = 0;
+    var rowCount = 0;
+
+    var repeatMatch = gridCols.match(/repeat\(\s*(\d+)/);
+    if (repeatMatch) {
+      colCount = parseInt(repeatMatch[1]);
     } else {
+      var cols = gridCols.match(/[\d.]+(?:fr|px|%|rem|em|vw)/g);
+      colCount = cols ? cols.length : 0;
+    }
+
+    var rowRepeatMatch = gridRows.match(/repeat\(\s*(\d+)/);
+    if (rowRepeatMatch) {
+      rowCount = parseInt(rowRepeatMatch[1]);
+    } else {
+      var rows = gridRows.match(/[\d.]+(?:fr|px|%|rem|em|vh)/g);
+      rowCount = rows ? rows.length : 0;
+    }
+
+    if (gridAutoFlow === "column") {
       stackMode = "HORIZONTAL";
+      if (colCount > 1) stackWrapEnabled = true;
+    } else {
+      stackMode = colCount > 1 ? "HORIZONTAL" : "VERTICAL";
+      if (colCount > 1 || rowCount > 1) stackWrapEnabled = true;
     }
-    if (colCount > 1 || rowCount > 1) {
-      stackWrapEnabled = true;
-    }
+
+    gridInfo = {
+      colCount: colCount,
+      rowCount: rowCount,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      gridAutoFlow: gridAutoFlow,
+    };
   }
 
   if (flexWrap === "wrap" || flexWrap === "wrap-reverse") {
@@ -45,6 +73,7 @@ function detectAutoLayout(el, childCount) {
   else if (justifyContent === "flex-end" || justifyContent === "end") stackJustify = "MAX";
   else if (justifyContent === "space-between") stackJustify = "SPACE_BETWEEN";
   else if (justifyContent === "space-around" || justifyContent === "space-evenly") stackJustify = "SPACE_BETWEEN";
+  else if (justifyContent === "space-evenly") stackJustify = "SPACE_BETWEEN";
 
   var stackCounterAlign = "MIN";
   if (alignItems === "center") stackCounterAlign = "CENTER";
@@ -70,8 +99,8 @@ function detectAutoLayout(el, childCount) {
     stackPaddingBottom: paddingBottom,
     stackPaddingLeft: paddingLeft,
     isGrid: isGrid,
-    gridCols: isGrid ? (props["grid-template-columns"] || "") : "",
     isFlex: isFlex,
+    gridInfo: gridInfo,
     flexDirection: flexDir,
     flexWrap: flexWrap,
     gap: gap,
