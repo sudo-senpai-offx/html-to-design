@@ -115,11 +115,14 @@ function buildHtmlDocument(html, css) {
 }
 
 app.get("/api/health", (req, res) => {
+  const pool = getPool();
+  const stats = pool.getStats();
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     memory: process.memoryUsage(),
+    browserPool: stats,
     formats: ["png", "pdf", "svg", "figma", "psd"],
   });
 });
@@ -267,23 +270,34 @@ const server = app.listen(PORT, async () => {
   console.log(`  Health: http://localhost:${PORT}/api/health`);
   console.log(`  Formats: POST /api/convert/:format (png, pdf, svg, figma, psd)`);
   console.log(`  Import:  POST /api/import/url`);
-  console.log(`  Rate limit: 10 conversions/min, 5 URL imports/min\n`);
+  console.log(`  Rate limit: 10 conversions/min, 5 URL imports/min`);
+  console.log(`  Platform: ${process.platform} ${process.arch}\n`);
 
   try {
-    await getPool().init();
+    await getPool({ maxConcurrency: process.platform === "win32" ? 2 : 4 }).init();
   } catch (e) {
     console.error("Warning: Could not initialize browser pool:", e.message);
+    console.error("Conversions will attempt to launch browsers on-demand.");
   }
 });
 
+let shuttingDown = false;
 async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`\n${signal} received. Shutting down gracefully...`);
-  server.close(async () => {
+  try {
     await shutdownPool();
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 10000);
+  } catch {}
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 5000);
 }
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err.message);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason);
+});

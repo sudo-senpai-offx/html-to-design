@@ -2,8 +2,8 @@ const { getPool } = require("../lib/browser-pool");
 
 async function convertToSvg(html, options) {
   var { width = 1440, height = 900, scale = 2 } = options;
-
   var pool = getPool();
+
   return pool.execute(async (page) => {
     await page.setViewport({ width, height, deviceScaleFactor: scale });
     await page.setContent(html, { waitUntil: "networkidle2", timeout: 30000 });
@@ -12,12 +12,10 @@ async function convertToSvg(html, options) {
 
     var pngBuffer = await page.screenshot({ type: "png", fullPage: true });
 
-    var dimensions = await page.evaluate(() => {
-      return {
-        width: document.documentElement.scrollWidth,
-        height: document.documentElement.scrollHeight,
-      };
-    });
+    var dimensions = await page.evaluate(() => ({
+      width: document.documentElement.scrollWidth,
+      height: document.documentElement.scrollHeight,
+    }));
 
     var svgContent = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -30,7 +28,7 @@ async function convertToSvg(html, options) {
 </svg>`;
 
     return Buffer.from(svgContent, "utf-8");
-  });
+  }, { timeout: 60000, retries: 3 });
 }
 
 module.exports = { convertToSvg };

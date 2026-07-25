@@ -2,8 +2,8 @@ const { getPool } = require("../lib/browser-pool");
 
 async function convertToPsd(html, options) {
   var { width = 1440, height = 900, scale = 2 } = options;
-
   var pool = getPool();
+
   var pngBuffer = await pool.execute(async (page) => {
     await page.setViewport({ width, height, deviceScaleFactor: scale });
     await page.setContent(html, { waitUntil: "networkidle2", timeout: 30000 });
@@ -15,7 +15,7 @@ async function convertToPsd(html, options) {
       fullPage: false,
       clip: { x: 0, y: 0, width, height },
     });
-  });
+  }, { timeout: 60000, retries: 3 });
 
   var psdBuffer = createMinimalPsd(width * scale, height * scale, pngBuffer);
   return psdBuffer;
@@ -24,7 +24,6 @@ async function convertToPsd(html, options) {
 function createMinimalPsd(width, height, imageBuffer) {
   var channels = 4;
   var depth = 8;
-  var compression = 0;
 
   var buf = Buffer.alloc(0);
 
@@ -50,19 +49,6 @@ function createMinimalPsd(width, height, imageBuffer) {
     buf = Buffer.concat([buf, b]);
   }
 
-  function writePascalString(str) {
-    var len = str.length;
-    if (len > 255) len = 255;
-    writeUint8(len);
-    writeString(str.substring(0, len));
-    if (len % 2 === 0) writeUint8(0);
-  }
-
-  function writePadding(size) {
-    var pad = (4 - (size % 4)) % 4;
-    for (var i = 0; i < pad; i++) writeUint8(0);
-  }
-
   writeString("8BPS");
   writeUint16(1);
   writeUint16(0);
@@ -73,19 +59,11 @@ function createMinimalPsd(width, height, imageBuffer) {
   writeUint16(depth);
   writeUint16(3);
 
-  var imageResourceSection = Buffer.alloc(0);
-  var irsLength = imageResourceSection.length;
-  writeUint32(irsLength);
-  if (irsLength > 0) buf = Buffer.concat([buf, imageResourceSection]);
-
-  var layerAndMaskInfo = Buffer.alloc(0);
-  var lmLength = layerAndMaskInfo.length;
-  writeUint32(lmLength);
-  if (lmLength > 0) buf = Buffer.concat([buf, layerAndMaskInfo]);
-
+  writeUint32(0);
+  writeUint32(0);
   writeUint32(0);
 
-  writeUint16(compression);
+  writeUint16(0);
 
   for (var c = 0; c < channels; c++) {
     for (var y = 0; y < height; y++) {

@@ -46,53 +46,55 @@ var EXTRACT_SCRIPT = `
   }
 
   function extractPseudo(el, pseudo) {
-    var cs = window.getComputedStyle(el, pseudo);
-    var content = cs.getPropertyValue("content");
-    if (!content || content === "none" || content === '\\"\\"' || content === '""' || content === "normal") return null;
-    var text = content.replace(/^["']|["']$/g, "");
-    if (!text || text.length === 0) return null;
+    try {
+      var cs = window.getComputedStyle(el, pseudo);
+      var content = cs.getPropertyValue("content");
+      if (!content || content === "none" || content === '""' || content === "normal") return null;
+      var text = content.replace(/^["']|["']$/g, "");
+      if (!text || text.length === 0) return null;
 
-    var rect = el.getBoundingClientRect();
-    var pseudoCs = window.getComputedStyle(el, pseudo);
-    var pos = pseudoCs.position;
-    var x = rect.x, y = rect.y;
-    var width = parseFloat(pseudoCs.width) || rect.width;
-    var height = parseFloat(pseudoCs.height) || rect.height;
+      var rect = el.getBoundingClientRect();
+      var pseudoCs = window.getComputedStyle(el, pseudo);
+      var pos = pseudoCs.position;
+      var x = rect.x, y = rect.y;
+      var width = parseFloat(pseudoCs.width) || rect.width;
+      var height = parseFloat(pseudoCs.height) || rect.height;
 
-    if (pos === "absolute" || pos === "fixed") {
-      var top = parseFloat(pseudoCs.top) || 0;
-      var left = parseFloat(pseudoCs.left) || 0;
-      x = rect.x + left;
-      y = rect.y + top;
-      try {
-        var tempEl = document.createElement("span");
-        tempEl.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;";
-        tempEl.textContent = text;
-        tempEl.style.fontFamily = pseudoCs.fontFamily;
-        tempEl.style.fontSize = pseudoCs.fontSize;
-        tempEl.style.fontWeight = pseudoCs.fontWeight;
-        tempEl.style.fontStyle = pseudoCs.fontStyle;
-        tempEl.style.letterSpacing = pseudoCs.letterSpacing;
-        el.appendChild(tempEl);
-        var tr = tempEl.getBoundingClientRect();
-        x = tr.x;
-        y = tr.y;
-        width = tr.width;
-        height = tr.height;
-        el.removeChild(tempEl);
-      } catch(e) {}
-    }
+      if (pos === "absolute" || pos === "fixed") {
+        var top = parseFloat(pseudoCs.top) || 0;
+        var left = parseFloat(pseudoCs.left) || 0;
+        x = rect.x + left;
+        y = rect.y + top;
+        try {
+          var tempEl = document.createElement("span");
+          tempEl.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;";
+          tempEl.textContent = text;
+          tempEl.style.fontFamily = pseudoCs.fontFamily;
+          tempEl.style.fontSize = pseudoCs.fontSize;
+          tempEl.style.fontWeight = pseudoCs.fontWeight;
+          tempEl.style.fontStyle = pseudoCs.fontStyle;
+          tempEl.style.letterSpacing = pseudoCs.letterSpacing;
+          el.appendChild(tempEl);
+          var tr = tempEl.getBoundingClientRect();
+          x = tr.x;
+          y = tr.y;
+          width = tr.width;
+          height = tr.height;
+          el.removeChild(tempEl);
+        } catch(e) {}
+      }
 
-    var props = getCS(el, pseudo);
-    return {
-      tag: "pseudo-" + pseudo.replace("::", ""),
-      cls: "", style: "", text: text,
-      x: Math.round(x), y: Math.round(y),
-      w: Math.round(width), h: Math.round(height),
-      props: props, children: [], attrs: {},
-      placeholder: "", inputType: "", value: "", src: "", alt: "",
-      href: "", dataAttrs: {},
-    };
+      var props = getCS(el, pseudo);
+      return {
+        tag: "pseudo-" + pseudo.replace("::", ""),
+        cls: "", style: "", text: text,
+        x: Math.round(x), y: Math.round(y),
+        w: Math.round(width), h: Math.round(height),
+        props: props, children: [], attrs: {},
+        placeholder: "", inputType: "", value: "", src: "", alt: "",
+        href: "", dataAttrs: {},
+      };
+    } catch(e) { return null; }
   }
 
   function findPositionedAncestor(el) {
@@ -110,164 +112,168 @@ var EXTRACT_SCRIPT = `
 
   function getSvgPaths(el) {
     var paths = [];
-    var svgEls = el.querySelectorAll("path, circle, rect, line, polyline, polygon, ellipse");
-    for (var i = 0; i < svgEls.length; i++) {
-      var s = svgEls[i];
-      var d = s.getAttribute("d");
-      var tag = s.tagName.toLowerCase();
-      if (tag === "path" && d) {
-        paths.push({ type: "path", d: d, fill: s.getAttribute("fill") || "none", stroke: s.getAttribute("stroke") || "none", strokeWidth: s.getAttribute("stroke-width") || "1" });
-      } else if (tag === "circle") {
-        paths.push({ type: "circle", cx: s.getAttribute("cx"), cy: s.getAttribute("cy"), r: s.getAttribute("r"), fill: s.getAttribute("fill") || "none", stroke: s.getAttribute("stroke") || "none" });
-      } else if (tag === "rect") {
-        paths.push({ type: "rect", x: s.getAttribute("x"), y: s.getAttribute("y"), width: s.getAttribute("width"), height: s.getAttribute("height"), fill: s.getAttribute("fill") || "none" });
+    try {
+      var svgEls = el.querySelectorAll("path, circle, rect, line, polyline, polygon, ellipse");
+      for (var i = 0; i < svgEls.length; i++) {
+        var s = svgEls[i];
+        var d = s.getAttribute("d");
+        var tag = s.tagName.toLowerCase();
+        if (tag === "path" && d) {
+          paths.push({ type: "path", d: d, fill: s.getAttribute("fill") || "none", stroke: s.getAttribute("stroke") || "none", strokeWidth: s.getAttribute("stroke-width") || "1" });
+        } else if (tag === "circle") {
+          paths.push({ type: "circle", cx: s.getAttribute("cx"), cy: s.getAttribute("cy"), r: s.getAttribute("r"), fill: s.getAttribute("fill") || "none", stroke: s.getAttribute("stroke") || "none" });
+        } else if (tag === "rect") {
+          paths.push({ type: "rect", x: s.getAttribute("x"), y: s.getAttribute("y"), width: s.getAttribute("width"), height: s.getAttribute("height"), fill: s.getAttribute("fill") || "none" });
+        }
       }
-    }
+    } catch(e) {}
     return paths;
   }
 
   var svgRasterList = [];
 
   function walk(el, depth) {
-    if (!el || depth > 100 || el.nodeType !== 1) return null;
-    var rect = el.getBoundingClientRect();
-    if (rect.width < 0.3 && rect.height < 0.3) return null;
+    try {
+      if (!el || depth > 100 || el.nodeType !== 1) return null;
+      var rect = el.getBoundingClientRect();
+      if (rect.width < 0.3 && rect.height < 0.3) return null;
 
-    var tag = el.tagName.toLowerCase();
-    var cls = typeof el.className === "string" ? el.className : "";
-    var style = el.getAttribute("style") || "";
+      var tag = el.tagName.toLowerCase();
+      var cls = typeof el.className === "string" ? el.className : "";
+      var style = el.getAttribute("style") || "";
 
-    var display = el.style.display || window.getComputedStyle(el).display;
-    if (display === "none") return null;
-    var visibility = window.getComputedStyle(el).visibility;
-    if (visibility === "hidden") return null;
-    var opacity = parseFloat(window.getComputedStyle(el).opacity);
-    if (!isNaN(opacity) && opacity < 0.01) return null;
+      var display = el.style.display || window.getComputedStyle(el).display;
+      if (display === "none") return null;
+      var visibility = window.getComputedStyle(el).visibility;
+      if (visibility === "hidden") return null;
+      var opacity = parseFloat(window.getComputedStyle(el).opacity);
+      if (!isNaN(opacity) && opacity < 0.01) return null;
 
-    if (tag === "br") return null;
-    if (tag === "script" || tag === "style" || tag === "noscript") return null;
+      if (tag === "br") return null;
+      if (tag === "script" || tag === "style" || tag === "noscript") return null;
 
-    var text = "";
-    for (var i = 0; i < el.childNodes.length; i++) {
-      var n = el.childNodes[i];
-      if (n.nodeType === 3 && n.textContent.trim()) {
-        text += (text ? " " : "") + n.textContent.trim();
-      }
-    }
-
-    var props = getCS(el);
-
-    var pos = props["position"] || "static";
-    var isPositioned = pos === "absolute" || pos === "fixed";
-    var posAncestor = null;
-    var posAncestorRect = null;
-    if (isPositioned) {
-      posAncestor = findPositionedAncestor(el);
-      posAncestorRect = posAncestor ? posAncestor.getBoundingClientRect() : null;
-    }
-
-    var svgPaths = [];
-    var svgRasterId = -1;
-    if (tag === "svg" && el.querySelector) {
-      svgPaths = getSvgPaths(el);
-      var svgRect = el.getBoundingClientRect();
-      if (svgRect.width > 0 && svgRect.height > 0) {
-        var svgHtml = el.outerHTML;
-        if (!svgHtml.match(/xmlns\\s*=/)) {
-          svgHtml = svgHtml.replace(/<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+      var text = "";
+      for (var i = 0; i < el.childNodes.length; i++) {
+        var n = el.childNodes[i];
+        if (n.nodeType === 3 && n.textContent.trim()) {
+          text += (text ? " " : "") + n.textContent.trim();
         }
-        var resolvedColor = window.getComputedStyle(el).color || "rgb(0,0,0)";
-        svgHtml = svgHtml.replace(/currentColor/g, resolvedColor);
-        svgRasterId = svgRasterList.length;
-        svgRasterList.push({
-          html: svgHtml,
-          width: Math.round(svgRect.width),
-          height: Math.round(svgRect.height),
-          currentColor: resolvedColor,
-        });
       }
-    }
 
-    var pseudos = [];
-    var beforeNode = extractPseudo(el, "::before");
-    if (beforeNode) pseudos.push(beforeNode);
-    var afterNode = extractPseudo(el, "::after");
-    if (afterNode) pseudos.push(afterNode);
+      var props = getCS(el);
 
-    var attrs = {};
-    if (tag === "svg" || tag === "path" || tag === "circle" || tag === "rect" ||
-        tag === "line" || tag === "polyline" || tag === "polygon" || tag === "ellipse") {
-      for (var a = 0; a < el.attributes.length; a++) {
-        attrs[el.attributes[a].name] = el.attributes[a].value;
+      var pos = props["position"] || "static";
+      var isPositioned = pos === "absolute" || pos === "fixed";
+      var posAncestor = null;
+      var posAncestorRect = null;
+      if (isPositioned) {
+        posAncestor = findPositionedAncestor(el);
+        posAncestorRect = posAncestor ? posAncestor.getBoundingClientRect() : null;
       }
-    }
 
-    var dataAttrs = {};
-    for (var d = 0; d < el.attributes.length; d++) {
-      if (el.attributes[d].name.startsWith("data-")) {
-        dataAttrs[el.attributes[d].name] = el.attributes[d].value;
+      var svgPaths = [];
+      var svgRasterId = -1;
+      if (tag === "svg" && el.querySelector) {
+        svgPaths = getSvgPaths(el);
+        var svgRect = el.getBoundingClientRect();
+        if (svgRect.width > 0 && svgRect.height > 0) {
+          var svgHtml = el.outerHTML;
+          if (!svgHtml.match(/xmlns\\s*=/)) {
+            svgHtml = svgHtml.replace(/<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+          }
+          var resolvedColor = window.getComputedStyle(el).color || "rgb(0,0,0)";
+          svgHtml = svgHtml.replace(/currentColor/g, resolvedColor);
+          svgRasterId = svgRasterList.length;
+          svgRasterList.push({
+            html: svgHtml,
+            width: Math.round(svgRect.width),
+            height: Math.round(svgRect.height),
+            currentColor: resolvedColor,
+          });
+        }
       }
-    }
 
-    var imgSrc = "";
-    if (tag === "img") {
-      imgSrc = el.currentSrc || el.src || "";
-    }
+      var pseudos = [];
+      var beforeNode = extractPseudo(el, "::before");
+      if (beforeNode) pseudos.push(beforeNode);
+      var afterNode = extractPseudo(el, "::after");
+      if (afterNode) pseudos.push(afterNode);
 
-    var bgImage = "";
-    var bgCS = props["background-image"];
-    if (bgCS && bgCS !== "none") {
-      var urlMatch = bgCS.match(/url\\(["']?([^"')]+)["']?\\)/);
-      if (urlMatch) bgImage = urlMatch[1];
-    }
+      var attrs = {};
+      if (tag === "svg" || tag === "path" || tag === "circle" || tag === "rect" ||
+          tag === "line" || tag === "polyline" || tag === "polygon" || tag === "ellipse") {
+        for (var a = 0; a < el.attributes.length; a++) {
+          attrs[el.attributes[a].name] = el.attributes[a].value;
+        }
+      }
 
-    var href = "";
-    if (tag === "a") {
-      href = el.href || "";
-    }
+      var dataAttrs = {};
+      for (var d = 0; d < el.attributes.length; d++) {
+        if (el.attributes[d].name.startsWith("data-")) {
+          dataAttrs[el.attributes[d].name] = el.attributes[d].value;
+        }
+      }
 
-    var figmaName = el.getAttribute("data-figma-name") || "";
+      var imgSrc = "";
+      if (tag === "img") {
+        imgSrc = el.currentSrc || el.src || "";
+      }
 
-    var children = [];
-    for (var p = 0; p < pseudos.length; p++) {
-      children.push(pseudos[p]);
-    }
-    for (var j = 0; j < el.children.length; j++) {
-      var child = walk(el.children[j], depth + 1);
-      if (child) children.push(child);
-    }
+      var bgImage = "";
+      var bgCS = props["background-image"];
+      if (bgCS && bgCS !== "none") {
+        var urlMatch = bgCS.match(/url\\(["']?([^"')]+)["']?\\)/);
+        if (urlMatch) bgImage = urlMatch[1];
+      }
 
-    var node = {
-      tag: tag, cls: cls, style: style, text: text,
-      x: Math.round(rect.x), y: Math.round(rect.y),
-      w: Math.round(rect.width), h: Math.round(rect.height),
-      props: props, children: children, attrs: attrs,
-      placeholder: el.placeholder || "",
-      inputType: el.type || "",
-      value: el.value || "",
-      src: imgSrc, alt: el.alt || "",
-      href: href, dataAttrs: dataAttrs,
-      bgImage: bgImage,
-      figmaName: figmaName,
-    };
+      var href = "";
+      if (tag === "a") {
+        href = el.href || "";
+      }
 
-    if (isPositioned && posAncestorRect) {
-      node.positionedAncestor = {
-        x: Math.round(posAncestorRect.x),
-        y: Math.round(posAncestorRect.y),
-        w: Math.round(posAncestorRect.width),
-        h: Math.round(posAncestorRect.height),
+      var figmaName = el.getAttribute("data-figma-name") || "";
+
+      var children = [];
+      for (var p = 0; p < pseudos.length; p++) {
+        children.push(pseudos[p]);
+      }
+      for (var j = 0; j < el.children.length; j++) {
+        var child = walk(el.children[j], depth + 1);
+        if (child) children.push(child);
+      }
+
+      var node = {
+        tag: tag, cls: cls, style: style, text: text,
+        x: Math.round(rect.x), y: Math.round(rect.y),
+        w: Math.round(rect.width), h: Math.round(rect.height),
+        props: props, children: children, attrs: attrs,
+        placeholder: el.placeholder || "",
+        inputType: el.type || "",
+        value: el.value || "",
+        src: imgSrc, alt: el.alt || "",
+        href: href, dataAttrs: dataAttrs,
+        bgImage: bgImage,
+        figmaName: figmaName,
       };
-    }
 
-    if (svgRasterId >= 0) {
-      node.svgRasterId = svgRasterId;
-    }
-    if (svgPaths.length > 0) {
-      node.svgPaths = svgPaths;
-    }
+      if (isPositioned && posAncestorRect) {
+        node.positionedAncestor = {
+          x: Math.round(posAncestorRect.x),
+          y: Math.round(posAncestorRect.y),
+          w: Math.round(posAncestorRect.width),
+          h: Math.round(posAncestorRect.height),
+        };
+      }
 
-    return node;
+      if (svgRasterId >= 0) {
+        node.svgRasterId = svgRasterId;
+      }
+      if (svgPaths.length > 0) {
+        node.svgPaths = svgPaths;
+      }
+
+      return node;
+    } catch(e) { return null; }
   }
 
   var domTree = walk(document.body, 0);
@@ -322,7 +328,7 @@ async function extractFullDOM(htmlFilePath, options) {
     }
 
     return { domTree: domTree, pageWidth: width, pageHeight: pageHeight, rasterizedSvgs: rasterizedSvgs };
-  });
+  }, { timeout: 120000, retries: 3 });
 }
 
 module.exports = { extractFullDOM };
