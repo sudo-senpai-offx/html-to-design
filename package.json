@@ -1,0 +1,22 @@
+{
+  "name": "html-to-design",
+  "version": "2.0.0",
+  "description": "Multi-format converter: HTML+CSS to PNG, PDF, SVG, Figma, and PSD",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && npm start",
+    "lint": "cd frontend && npx tsc --noEmit",
+    "launch": "npm run install:all && npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
