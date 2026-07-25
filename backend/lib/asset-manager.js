@@ -8,12 +8,26 @@ class AssetManager {
   constructor(cacheDir) {
     this.cacheDir = cacheDir || path.resolve(__dirname, "../.image-cache");
     this.cache = new Map();
+    this.pending = new Map();
     if (!fs.existsSync(this.cacheDir)) fs.mkdirSync(this.cacheDir, { recursive: true });
   }
 
   async download(url) {
     if (this.cache.has(url)) return this.cache.get(url);
 
+    if (this.pending.has(url)) return this.pending.get(url);
+
+    var promise = this._doDownload(url);
+    this.pending.set(url, promise);
+    try {
+      var result = await promise;
+      return result;
+    } finally {
+      this.pending.delete(url);
+    }
+  }
+
+  async _doDownload(url) {
     var cacheKey = computeSHA1(Buffer.from(url));
     var cachePath = path.join(this.cacheDir, cacheKey + ".img");
 

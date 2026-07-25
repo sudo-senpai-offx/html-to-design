@@ -647,6 +647,104 @@ function buildDesignTokens(doc, canvasGuid, domTree, ctx) {
   }
 }
 
+function extractTextStyles(domTree) {
+  var styleMap = new Map();
+
+  function walk(el) {
+    if (!el) return;
+    var props = el.props || {};
+    var hasText = el.text && el.text.length > 0;
+
+    if (hasText && (props["font-size"] || props["font-family"])) {
+      var key = [
+        fontFamily(props["font-family"]),
+        fontWeight(props["font-weight"] || "400"),
+        parseFloat(props["font-size"]) || 16,
+        props["color"] || "#1A1A1A",
+      ].join("|");
+
+      if (!styleMap.has(key)) {
+        styleMap.set(key, {
+          family: fontFamily(props["font-family"]),
+          style: fontWeight(props["font-weight"] || "400"),
+          size: parseFloat(props["font-size"]) || 16,
+          color: parseColor(props["color"] || "#1A1A1A") || { r: 0.1, g: 0.1, b: 0.1, a: 1 },
+          lineHeight: parseFloat(props["line-height"]) || (parseFloat(props["font-size"]) || 16) * 1.6,
+          letterSpacing: parseFloat(props["letter-spacing"]) || 0,
+          count: 1,
+        });
+      } else {
+        styleMap.get(key).count++;
+      }
+    }
+
+    if (el.children) el.children.forEach(walk);
+  }
+  walk(domTree);
+
+  var styles = Array.from(styleMap.values())
+    .sort(function(a, b) { return b.count - a.count; })
+    .slice(0, 20);
+
+  return styles;
+}
+
+function buildTextStyles(doc, canvasGuid, domTree, ctx) {
+  var textStyles = extractTextStyles(domTree);
+
+  var styleSetGuid = guid(1, ctx.nextId++);
+  doc.message.nodeChanges.push({
+    guid: styleSetGuid, type: "COMPONENT_SET", name: "Text Styles",
+    phase: "CREATED",
+    parentIndex: { guid: canvasGuid, position: "!" },
+    visible: true, opacity: 1,
+    size: { x: 200, y: 50 },
+    transform: { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 },
+    frameMaskDisabled: false,
+    pluginData: pluginData(false),
+  });
+
+  for (var i = 0; i < textStyles.length; i++) {
+    var ts = textStyles[i];
+    var styleName = ts.family + " " + ts.style + " " + ts.size + "px";
+
+    var compGuid = guid(1, ctx.nextId++);
+    doc.message.nodeChanges.push({
+      guid: compGuid, type: "COMPONENT", name: styleName.substring(0, 50),
+      phase: "CREATED",
+      parentIndex: { guid: styleSetGuid, position: zOrderChar(i) },
+      visible: true, opacity: 1,
+      size: { x: Math.max(ts.size * styleName.length * 0.5, 100), y: ts.lineHeight * 1.5 },
+      transform: makePos(0, i * (ts.lineHeight * 1.5 + 20)),
+      fillPaints: [],
+      strokeWeight: 0, strokeAlign: "OUTSIDE",
+      frameMaskDisabled: false,
+      pluginData: pluginData(false),
+    });
+
+    doc.message.nodeChanges.push({
+      guid: guid(1, ctx.nextId++), type: "TEXT",
+      name: styleName.substring(0, 50),
+      phase: "CREATED",
+      parentIndex: { guid: compGuid, position: zOrderChar(0) },
+      visible: true, opacity: 1,
+      size: { x: Math.max(ts.size * styleName.length * 0.5, 100), y: ts.lineHeight },
+      transform: makePos(0, 0),
+      textData: { characters: styleName },
+      fontName: { family: ts.family, style: ts.style, postscript: "" },
+      fontSize: ts.size,
+      lineHeight: { value: ts.lineHeight, units: "PIXELS" },
+      letterSpacing: { value: ts.letterSpacing, units: "PIXELS" },
+      textAutoResize: "WIDTH_AND_HEIGHT",
+      textAlignHorizontal: "LEFT",
+      textAlignVertical: "TOP",
+      fillPaints: [{ type: "SOLID", color: ts.color, opacity: 1, visible: true, blendMode: "NORMAL" }],
+      strokeWeight: 0, strokeAlign: "OUTSIDE",
+      pluginData: pluginData(true),
+    });
+  }
+}
+
 function buildDocument(domTree, pageWidth, pageHeight, pageName, assetManager, rasterizedSvgs) {
   var ctx = {
     nextId: 500,
@@ -662,6 +760,7 @@ function buildDocument(domTree, pageWidth, pageHeight, pageName, assetManager, r
   var canvasGuid = doc.message.nodeChanges.find(function(n) { return n.type === "CANVAS"; }).guid;
 
   buildDesignTokens(doc, canvasGuid, domTree, ctx);
+  buildTextStyles(doc, canvasGuid, domTree, ctx);
 
   ctx.pageGuid = guid(1, ctx.nextId++);
   doc.message.nodeChanges.push({

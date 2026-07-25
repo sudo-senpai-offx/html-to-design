@@ -7,6 +7,7 @@ import Preview from './components/Preview';
 import ExportPanel from './components/ExportPanel';
 import Settings from './components/Settings';
 import UrlImport from './components/UrlImport';
+import ErrorBoundary from './components/ErrorBoundary';
 import { convertToFormat } from './api/client';
 import { useDebounce } from './hooks/useDebounce';
 
@@ -139,6 +140,11 @@ export default function App() {
     const toastId = toast.loading(`Converting to ${format.toUpperCase()}...`);
     try {
       const blob = await convertToFormat(format, fullHtml, { width, height, scale }, pdfOptions as any);
+
+      if (!blob || blob.size === 0) {
+        throw new Error('Server returned empty response');
+      }
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       const ext = format === 'figma' ? 'fig' : format;
@@ -148,10 +154,20 @@ export default function App() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success(`${format.toUpperCase()} exported successfully`, { id: toastId });
+      const sizeKB = (blob.size / 1024).toFixed(1);
+      toast.success(`${format.toUpperCase()} exported (${sizeKB}KB)`, { id: toastId });
     } catch (err: any) {
-      const msg = err?.response?.data?.error || err.message || 'Export failed';
-      toast.error(`Export failed: ${msg}`, { id: toastId });
+      let msg = 'Export failed';
+      if (err?.response?.data?.error) {
+        msg = err.response.data.error;
+      } else if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
+        msg = 'Request timed out - the page may be too complex. Try reducing viewport size.';
+      } else if (err?.code === 'ERR_NETWORK') {
+        msg = 'Network error - is the backend server running?';
+      } else if (err?.message) {
+        msg = err.message;
+      }
+      toast.error(msg, { id: toastId, duration: 6000 });
     } finally {
       setExporting(null);
     }
@@ -172,6 +188,10 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
         e.preventDefault();
         handleExport('figma');
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') {
+        e.preventDefault();
+        handleExport('pdf');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -199,7 +219,7 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-xs text-slate-500 hidden md:block">
+          <span className="text-xs text-slate-500 hidden md:block" title="PNG: Ctrl+Enter | Figma: Ctrl+Shift+F | PDF: Ctrl+Shift+P">
             <kbd className="px-1.5 py-0.5 bg-brand-light rounded text-[10px]">Ctrl+Enter</kbd> PNG
             <span className="mx-1">|</span>
             <kbd className="px-1.5 py-0.5 bg-brand-light rounded text-[10px]">Ctrl+Shift+F</kbd> Figma
@@ -229,14 +249,16 @@ export default function App() {
         <main className="flex-1 min-w-0">
           <PanelGroup direction="horizontal">
             <Panel defaultSize={50} minSize={30}>
-              <CodeEditor
-                html={html}
-                css={css}
-                onHtmlChange={setHtml}
-                onCssChange={setCss}
-                activeTab={editorTab}
-                onTabChange={setEditorTab}
-              />
+              <ErrorBoundary fallback={<div className="flex items-center justify-center h-full bg-brand-dark text-slate-400 text-sm">Editor failed to load. Try refreshing.</div>}>
+                <CodeEditor
+                  html={html}
+                  css={css}
+                  onHtmlChange={setHtml}
+                  onCssChange={setCss}
+                  activeTab={editorTab}
+                  onTabChange={setEditorTab}
+                />
+              </ErrorBoundary>
             </Panel>
             <PanelResizeHandle className="w-1.5 bg-brand-light hover:bg-brand-accent transition-colors cursor-col-resize" />
             <Panel defaultSize={50} minSize={20}>

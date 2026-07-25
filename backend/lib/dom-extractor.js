@@ -39,7 +39,22 @@ var EXTRACT_SCRIPT = `
       "filter","backdrop-filter",
       "mix-blend-mode","background-blend-mode",
       "column-gap","row-gap",
-      "aspect-ratio","container-type",
+      "container-type","container-name",
+      "clip-path","shape-outside",
+      "scroll-margin-top","scroll-margin-right","scroll-margin-bottom","scroll-margin-left",
+      "scroll-padding-top","scroll-padding-right","scroll-padding-bottom","scroll-padding-left",
+      "mask-image","mask-size","mask-position","mask-repeat",
+      "-webkit-line-clamp","-webkit-box-orient",
+      "text-shadow",
+      "word-spacing",
+      "list-style-type","list-style-position","list-style-image",
+      "caption-side","border-collapse","border-spacing",
+      "table-layout","empty-cells",
+      "writing-mode","text-orientation",
+      "direction","unicode-bidi",
+      "image-rendering","object-position",
+      "pointer-events","touch-action",
+      "will-change","contain",
     ];
     for (var i = 0; i < important.length; i++) {
       var val = cs.getPropertyValue(important[i]);

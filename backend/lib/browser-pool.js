@@ -30,12 +30,15 @@ class BrowserPool {
   constructor(options) {
     this.maxConcurrency = options?.maxConcurrency || (WIN32 ? 2 : Math.min(os.cpus().length, 4));
     this.maxTasksPerBrowser = options?.maxTasksPerBrowser || 50;
+    this.maxIdleTime = options?.maxIdleTime || 300000;
     this.timeout = options?.timeout || 60000;
     this.browsers = [];
     this.busyBrowsers = new Set();
+    this.lastUsedTimestamps = new Map();
     this.queue = [];
     this.initialized = false;
     this._browserCounter = 0;
+    this._cleanupInterval = null;
   }
 
   async init() {
@@ -45,6 +48,7 @@ class BrowserPool {
       await this._launchBrowser();
     }
     this.initialized = true;
+    this._cleanupInterval = setInterval(() => this._cleanupIdleBrowsers(), 60000);
     console.log(`  Browser pool ready: ${this.browsers.length} instance(s)`);
   }
 
@@ -106,7 +110,14 @@ class BrowserPool {
     for (let attempt = 1; attempt <= retries; attempt++) {
       let entry = this._getAvailableBrowser();
       if (!entry) {
-        await new Promise(resolve => this.queue.push(resolve));
+        const queueTimeout = options?.queueTimeout || 30000;
+        const waitResult = await Promise.race([
+          new Promise(resolve => this.queue.push(resolve)),
+          new Promise(resolve => setTimeout(() => resolve("__timeout__"), queueTimeout)),
+        ]);
+        if (waitResult === "__timeout__") {
+          throw new Error("No browser available within " + queueTimeout + "ms (queue full)");
+        }
         entry = this._getAvailableBrowser();
       }
       if (!entry) {
@@ -114,6 +125,7 @@ class BrowserPool {
       }
 
       this.busyBrowsers.add(entry.id);
+      this.lastUsedTimestamps.delete(entry.id);
       let page;
       try {
         page = await entry.browser.newPage();
@@ -150,11 +162,28 @@ class BrowserPool {
           await page.close().catch(() => {});
         }
         this.busyBrowsers.delete(entry.id);
+        this.lastUsedTimestamps.set(entry.id, Date.now());
         if (this.queue.length) this.queue.shift()();
       }
     }
 
     throw lastError || new Error("All retry attempts failed");
+  }
+
+  _cleanupIdleBrowsers() {
+    if (!this.initialized) return;
+    const now = Date.now();
+    for (let i = this.browsers.length - 1; i >= 0; i--) {
+      const entry = this.browsers[i];
+      if (this.busyBrowsers.has(entry.id)) continue;
+      const lastUsed = this.lastUsedTimestamps.get(entry.id) || 0;
+      if (lastUsed > 0 && (now - lastUsed) > this.maxIdleTime && this.browsers.length > 1) {
+        console.log(`  Browser #${entry.id} idle for ${Math.round((now - lastUsed) / 1000)}s, closing`);
+        this.browsers.splice(i, 1);
+        this.lastUsedTimestamps.delete(entry.id);
+        entry.browser.close().catch(() => {});
+      }
+    }
   }
 
   async _recycleBrowser(entry) {
@@ -172,6 +201,10 @@ class BrowserPool {
 
   async destroy() {
     this.initialized = false;
+    if (this._cleanupInterval) {
+      clearInterval(this._cleanupInterval);
+      this._cleanupInterval = null;
+    }
     const closePromises = this.browsers.map(async (entry) => {
       try {
         await entry.browser.close();
@@ -180,6 +213,7 @@ class BrowserPool {
     await Promise.all(closePromises);
     this.browsers = [];
     this.busyBrowsers.clear();
+    this.lastUsedTimestamps.clear();
     this.queue.forEach(resolve => resolve());
     this.queue = [];
   }

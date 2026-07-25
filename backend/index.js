@@ -8,9 +8,19 @@ const { v4: uuidv4 } = require("uuid");
 const { convertTo } = require("./converters");
 const { getPool, shutdownPool } = require("./lib/browser-pool");
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT) || 3000;
 const TEMP_DIR = path.resolve(process.env.TEMP_DIR || "./temp");
+const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024;
+
+if (PORT < 1 || PORT > 65535) {
+  console.error("Invalid PORT:", process.env.PORT);
+  process.exit(1);
+}
+if (MAX_FILE_SIZE > 50 * 1024 * 1024) {
+  console.warn("MAX_FILE_SIZE exceeds 50MB, capping to 50MB");
+}
+
+const app = express();
 
 fs.ensureDirSync(TEMP_DIR);
 
@@ -45,7 +55,7 @@ app.use((req, res, next) => {
 
 const upload = multer({
   dest: TEMP_DIR,
-  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 },
+  limits: { fileSize: MAX_FILE_SIZE },
   fileFilter: (req, file, cb) => {
     const allowed = [".html", ".htm", ".txt"];
     const ext = path.extname(file.originalname).toLowerCase();
@@ -90,10 +100,41 @@ setInterval(() => {
   }
 }, 60000);
 
+const { JSDOM } = require("jsdom");
+
 function sanitizeHtml(html) {
   if (!html) return "";
-  var sanitized = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
-  return sanitized;
+  try {
+    const dom = new JSDOM(html);
+    const doc = dom.window.document;
+
+    const dangerousTags = ["script", "iframe", "object", "embed", "form", "input", "textarea", "select", "button"];
+    for (const tag of dangerousTags) {
+      const els = doc.querySelectorAll(tag);
+      els.forEach(el => el.remove());
+    }
+
+    const dangerousAttrs = ["onload", "onerror", "onclick", "onmouseover", "onfocus", "onblur",
+      "onsubmit", "onchange", "onkeydown", "onkeyup", "onkeypress",
+      "onmouseenter", "onmouseleave", "onmousemove", "onmouseout",
+      "onanimationend", "onanimationstart", "ontransitionend"];
+    const allEls = doc.querySelectorAll("*");
+    allEls.forEach(el => {
+      dangerousAttrs.forEach(attr => {
+        if (el.hasAttribute(attr)) el.removeAttribute(attr);
+      });
+      if (el.tagName === "A") {
+        const href = el.getAttribute("href") || "";
+        if (href.startsWith("javascript:")) el.removeAttribute("href");
+      }
+    });
+
+    return dom.window.document.body.innerHTML;
+  } catch (e) {
+    return html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+      .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, "")
+      .replace(/javascript:/gi, "");
+  }
 }
 
 function buildHtmlDocument(html, css) {
@@ -132,7 +173,7 @@ app.get("/api/formats", (req, res) => {
     formats: [
       { id: "png", label: "PNG", description: "Raster image (full page screenshot)" },
       { id: "pdf", label: "PDF", description: "Print-ready PDF document" },
-      { id: "svg", label: "SVG", description: "Vector graphic (PNG embedded in SVG)" },
+      { id: "svg", label: "SVG", description: "Vector graphic with raster base + text overlay" },
       { id: "figma", label: "Figma", description: ".fig file with native layers and auto-layout" },
       { id: "psd", label: "PSD", description: "Adobe Photoshop document" },
     ],
