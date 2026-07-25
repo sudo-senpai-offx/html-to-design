@@ -302,6 +302,34 @@ app.post("/api/convert/:format", rateLimit(10, 60000), upload.single("html"), as
   }
 });
 
+const { compare: compareOutput } = require("./lib/comparator");
+
+app.post("/api/compare", rateLimit(5, 60000), async (req, res) => {
+  try {
+    const { html, css, format, convertedBuffer } = req.body;
+    if (!html) {
+      return res.status(400).json({ error: "HTML content is required" });
+    }
+
+    const fullHtml = buildHtmlDocument(sanitizeHtml(html), css || "");
+    let convBuf = null;
+    if (convertedBuffer) {
+      try {
+        convBuf = Buffer.from(convertedBuffer, "base64");
+      } catch {}
+    }
+
+    console.log(`Comparing output for format: ${format || "unknown"}`);
+    const result = await compareOutput(html, css || "", format || "png", convBuf);
+    console.log(`Comparison complete: ${result.overallScore.toFixed(1)}% overall`);
+
+    res.json(result);
+  } catch (err) {
+    console.error("Comparison error:", err.message);
+    res.status(500).json({ error: "Comparison failed: " + err.message });
+  }
+});
+
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === "LIMIT_FILE_SIZE") {
