@@ -8,6 +8,7 @@
     "dev": "node --watch index.js"
   },
   "dependencies": {
+    "@open-pencil/cli": "^0.13.2",
     "ag-psd": "^31.0.2",
     "archiver": "^7.0.1",
     "canvas": "^3.2.3",

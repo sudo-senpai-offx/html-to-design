@@ -30,14 +30,14 @@ async function convertToFigma(html, options) {
 
     console.log(`  Building Figma nodes...`);
     const assetManager = new AssetManager();
-    const doc = await buildDocument(tree, pageWidth, pageHeight, "HTML Export", assetManager, rasterizedSvgs);
+    const graph = await buildDocument(tree, pageWidth, pageHeight, "HTML Export", assetManager, rasterizedSvgs);
 
-    if (!doc || !doc.message) {
+    if (!graph || !graph.nodes || graph.nodes.size === 0) {
       throw new Error("Failed to build Figma document structure");
     }
 
     console.log(`  Serializing .fig file...`);
-    const figBuffer = await writeFigBuffer(doc);
+    const figBuffer = await writeFigBuffer(graph);
 
     if (!figBuffer || figBuffer.length === 0) {
       throw new Error("Generated .fig file is empty");

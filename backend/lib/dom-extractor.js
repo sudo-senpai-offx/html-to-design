@@ -284,13 +284,19 @@ async function extractFullDOM(htmlFilePath, options) {
   var pool = getPool();
 
   return pool.execute(async (page) => {
-    await page.setViewport({ width: width, height: 900, deviceScaleFactor: scale });
     var fileUrl = htmlFilePath.startsWith("file:")
       ? htmlFilePath
       : "file:///" + path.resolve(htmlFilePath).replace(/\\/g, "/");
+    await page.setViewport({ width: width, height: 900, deviceScaleFactor: scale });
     await page.goto(fileUrl, { waitUntil: "networkidle0", timeout: 30000 });
     await page.evaluate(function() { return document.fonts && document.fonts.ready; });
     await new Promise(function(r) { setTimeout(r, 800); });
+
+    var bodyHeight = await page.evaluate(function() { return document.body.scrollHeight || document.documentElement.scrollHeight; });
+    if (bodyHeight > 900) {
+      await page.setViewport({ width: width, height: bodyHeight + 100, deviceScaleFactor: scale });
+      await new Promise(function(r) { setTimeout(r, 300); });
+    }
 
     var result = await page.evaluate(EXTRACT_SCRIPT);
     var flatElements = result.flatElements;

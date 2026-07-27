@@ -94,14 +94,17 @@ function parseGradient(str) {
     return stops;
   }
 
+  var defaultColor = { r: 0, g: 0, b: 0, a: 1 };
+
   var rgm = str.match(/radial-gradient\((.+)\)/);
   if (rgm) {
     var stops = parseGradientStops(rgm[1]);
     if (stops.length < 2) return [];
     return [{
       type: "GRADIENT_RADIAL",
-      stops: stops,
-      transform: { m00: 0.5, m01: 0, m02: 0.5, m10: 0, m11: 0.5, m12: 0.5 },
+      color: stops[0].color || defaultColor,
+      gradientStops: stops,
+      gradientTransform: { m00: 0.5, m01: 0, m02: 0.5, m10: 0, m11: 0.5, m12: 0.5 },
       opacity: 1, visible: true, blendMode: "NORMAL",
     }];
   }
@@ -127,8 +130,9 @@ function parseGradient(str) {
   var rad = (angle * Math.PI) / 180;
   return [{
     type: "GRADIENT_LINEAR",
-    stops: stops,
-    transform: {
+    color: stops[0].color || defaultColor,
+    gradientStops: stops,
+    gradientTransform: {
       m00: Math.sin(rad), m01: Math.cos(rad), m02: 0.5 - 0.5 * Math.sin(rad),
       m10: -Math.cos(rad), m11: Math.sin(rad), m12: 0.5 + 0.5 * Math.cos(rad),
     },

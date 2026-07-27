@@ -1,59 +1,28 @@
-const { encodeFigParts, assembleCanvasFig, createFigZip } = require("openfig-core");
-const { ZstdCodec } = require("zstd-codec");
 const fs = require("fs");
 const path = require("path");
 
-function zstdCompress(data, level) {
-  level = level || 3;
-  return new Promise(function(resolve, reject) {
-    ZstdCodec.run(function(zstd) {
-      try {
-        var simple = new zstd.Simple();
-        resolve(new Uint8Array(simple.compress(Buffer.from(data), level)));
-      } catch (e) { reject(e); }
-    });
-  });
+var _exportFigFile = null;
+
+async function loadExportFigFile() {
+  if (!_exportFigFile) {
+    var io = await import("@open-pencil/core/io");
+    _exportFigFile = io.exportFigFile;
+  }
+  return _exportFigFile;
 }
 
-async function writeFigFile(doc, outputPath) {
-  var parts = encodeFigParts(doc);
-  var messageCompressed = await zstdCompress(parts.messageRaw, 3);
-  var canvasFig = assembleCanvasFig({
-    prelude: parts.prelude,
-    version: parts.version,
-    schemaCompressed: parts.schemaCompressed,
-    messageCompressed: messageCompressed,
-    passThrough: parts.passThrough,
-  });
-  var figZip = createFigZip({
-    canvasFig: canvasFig,
-    meta: doc.meta,
-    thumbnail: doc.thumbnail,
-    images: doc.images,
-  });
+async function writeFigFile(graph, outputPath) {
+  var buffer = await writeFigBuffer(graph);
   var dir = path.dirname(outputPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(outputPath, Buffer.from(figZip));
+  fs.writeFileSync(outputPath, buffer);
   return outputPath;
 }
 
-async function writeFigBuffer(doc) {
-  var parts = encodeFigParts(doc);
-  var messageCompressed = await zstdCompress(parts.messageRaw, 3);
-  var canvasFig = assembleCanvasFig({
-    prelude: parts.prelude,
-    version: parts.version,
-    schemaCompressed: parts.schemaCompressed,
-    messageCompressed: messageCompressed,
-    passThrough: parts.passThrough,
-  });
-  var figZip = createFigZip({
-    canvasFig: canvasFig,
-    meta: doc.meta,
-    thumbnail: doc.thumbnail,
-    images: doc.images,
-  });
-  return Buffer.from(figZip);
+async function writeFigBuffer(graph) {
+  var exportFigFile = await loadExportFigFile();
+  var figArray = await exportFigFile(graph);
+  return Buffer.from(figArray);
 }
 
 module.exports = { writeFigFile, writeFigBuffer };
