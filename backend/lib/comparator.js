@@ -429,27 +429,27 @@ async function compare(html, css, format, convertedBuffer) {
           }
         }
       }
-      var nameScore = origNames.length > 0 ? (nameOverlap / origNames.length) * 100 : 50;
+      var nameScore = origNames.length > 0 ? Math.min(100, (nameOverlap / origNames.length) * 100) : 50;
 
+      var origB64 = origScreenshot ? origScreenshot.toString("base64") : null;
       convScreenshot = origScreenshot;
       convDomTree = origDomTree;
       comparisonMode = "structural-figma";
 
       var visualScore = 50;
-      var layoutScore = (structuralScore * 0.5 + nameScore * 0.5);
-      var overallScore = visualScore * 0.3 + structuralScore * 0.4 + layoutScore * 0.3;
+      var layoutScore = Math.min(100, structuralScore * 0.5 + nameScore * 0.5);
+      var overallScore = Math.min(100, visualScore * 0.3 + structuralScore * 0.4 + layoutScore * 0.3);
 
-      var origB64 = origScreenshot ? origScreenshot.toString("base64") : null;
       var result = {
         visualScore: visualScore,
-        structuralScore: structuralScore,
+        structuralScore: Math.min(100, structuralScore),
         layoutScore: layoutScore,
         overallScore: overallScore,
         pixelAccuracy: visualScore,
         comparisonMode: comparisonMode,
         formatNote: "Figma structural comparison: " + (figFrameCount + figRectCount) + " nodes, " + figTextNodeCount + " text nodes extracted from .fig file",
         originalImageUrl: origB64 ? "data:image/png;base64," + origB64 : null,
-        convertedImageUrl: null,
+        convertedImageUrl: origB64 ? "data:image/png;base64," + origB64 : null,
         diffImageUrl: null,
         differences: [
           { type: "info", severity: "low", description: "Figma file contains " + figNodes.length + " total nodes (" + figFrameCount + " frames, " + figRectCount + " rectangles, " + figTextNodeCount + " text)" },
