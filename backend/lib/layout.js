@@ -13,6 +13,53 @@ function detectAutoLayout(el, childCount) {
 
   var isFlex = display === "flex" || display === "inline-flex";
   var isGrid = display === "grid" || display === "inline-grid";
+
+  if (!isFlex && !isGrid) {
+    return {
+      isAutoLayout: false,
+      stackMode: "NONE",
+      stackSpacing: 0,
+      stackJustify: "MIN",
+      stackCounterAlign: "MIN",
+      stackWrapEnabled: false,
+      stackPrimarySizing: "FIXED",
+      stackCounterSizing: "FIXED",
+      stackPaddingTop: 0,
+      stackPaddingRight: 0,
+      stackPaddingBottom: 0,
+      stackPaddingLeft: 0,
+      isGrid: false,
+      isFlex: false,
+      gridInfo: null,
+      flexDirection: flexDir,
+      flexWrap: flexWrap,
+      gap: 0,
+    };
+  }
+
+  if (!childCount || childCount <= 1) {
+    return {
+      isAutoLayout: false,
+      stackMode: "NONE",
+      stackSpacing: 0,
+      stackJustify: "MIN",
+      stackCounterAlign: "MIN",
+      stackWrapEnabled: false,
+      stackPrimarySizing: "FIXED",
+      stackCounterSizing: "FIXED",
+      stackPaddingTop: 0,
+      stackPaddingRight: 0,
+      stackPaddingBottom: 0,
+      stackPaddingLeft: 0,
+      isGrid: isGrid,
+      isFlex: isFlex,
+      gridInfo: null,
+      flexDirection: flexDir,
+      flexWrap: flexWrap,
+      gap: 0,
+    };
+  }
+
   var stackWrapEnabled = false;
 
   var stackMode = "NONE";
@@ -72,13 +119,12 @@ function detectAutoLayout(el, childCount) {
   if (justifyContent === "center") stackJustify = "CENTER";
   else if (justifyContent === "flex-end" || justifyContent === "end") stackJustify = "MAX";
   else if (justifyContent === "space-between") stackJustify = "SPACE_BETWEEN";
-  else if (justifyContent === "space-around" || justifyContent === "space-evenly") stackJustify = "SPACE_BETWEEN";
-  else if (justifyContent === "space-evenly") stackJustify = "SPACE_BETWEEN";
+  else if (justifyContent === "space-around" || justifyContent === "space-evenly") stackJustify = "SPACE_EVENLY";
 
   var stackCounterAlign = "MIN";
   if (alignItems === "center") stackCounterAlign = "CENTER";
   else if (alignItems === "flex-end" || alignItems === "end") stackCounterAlign = "MAX";
-  else     if (alignItems === "stretch") stackCounterAlign = "STRETCH";
+  else if (alignItems === "stretch") stackCounterAlign = "STRETCH";
   else if (alignItems === "baseline") stackCounterAlign = "BASELINE";
 
   var width = parseFloat(props["width"]) || 0;
@@ -87,6 +133,7 @@ function detectAutoLayout(el, childCount) {
                          (props["height"] && !props["height"].includes("auto"));
 
   return {
+    isAutoLayout: true,
     stackMode: stackMode,
     stackSpacing: gap,
     stackJustify: stackJustify,

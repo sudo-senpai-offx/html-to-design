@@ -55,13 +55,6 @@ function extractStyles(props, width, height) {
     left: parseFloat(props["padding-left"]) || 0,
   };
 
-  var layoutMode = "NONE";
-  if (display === "flex" || display === "inline-flex") {
-    layoutMode = flexDir === "column" || flexDir === "column-reverse" ? "VERTICAL" : "HORIZONTAL";
-  } else if (display === "grid" || display === "inline-grid") {
-    layoutMode = "HORIZONTAL";
-  }
-
   var overflow = props["overflow"] || "visible";
   var visibility = props["visibility"] !== "hidden";
   var position = props["position"] || "static";
@@ -159,7 +152,7 @@ function extractStyles(props, width, height) {
 
   return {
     fills, stroke, effects, textShadowEffects, radius, opacity, bgImageUrl,
-    textProps, display, layoutMode, flexDir, justifyContent, alignItems, alignSelf,
+    textProps, display, flexDir, justifyContent, alignItems, alignSelf,
     flexWrap, gap, padding, overflow, visibility, position, zIndex,
     outline, blurAmount, translate, rotate, scale: scaleVal, transformMatrix,
     brightnessAmount, contrastAmount, saturateAmount, grayscaleAmount,

@@ -3,6 +3,9 @@ const path = require("path");
 
 var EXTRACT_SCRIPT = `
 (function() {
+  var flatElements = [];
+  var nextId = 0;
+
   function getCS(el, pseudo) {
     var cs = window.getComputedStyle(el, pseudo || null);
     var props = {};
@@ -103,29 +106,19 @@ var EXTRACT_SCRIPT = `
       }
 
       var props = getCS(el, pseudo);
-      return {
+      var element = {
+        id: nextId++,
         tag: "pseudo-" + pseudo.replace("::", ""),
         cls: "", style: "", text: text,
         x: Math.round(x), y: Math.round(y),
         w: Math.round(width), h: Math.round(height),
-        props: props, children: [], attrs: {},
+        props: props, attrs: {},
         placeholder: "", inputType: "", value: "", src: "", alt: "",
         href: "", dataAttrs: {},
       };
+      flatElements.push(element);
+      return element;
     } catch(e) { return null; }
-  }
-
-  function findPositionedAncestor(el) {
-    var current = el.parentElement;
-    while (current && current !== document.body) {
-      var cs = window.getComputedStyle(current);
-      var pos = cs.position;
-      if (pos === "relative" || pos === "absolute" || pos === "fixed" || pos === "sticky") {
-        return current;
-      }
-      current = current.parentElement;
-    }
-    return document.body;
   }
 
   function getSvgPaths(el) {
@@ -152,23 +145,23 @@ var EXTRACT_SCRIPT = `
 
   function walk(el, depth) {
     try {
-      if (!el || depth > 100 || el.nodeType !== 1) return null;
+      if (!el || depth > 100 || el.nodeType !== 1) return;
       var rect = el.getBoundingClientRect();
-      if (rect.width < 0.3 && rect.height < 0.3) return null;
+      if (rect.width < 0.3 && rect.height < 0.3) return;
 
       var tag = el.tagName.toLowerCase();
       var cls = typeof el.className === "string" ? el.className : "";
       var style = el.getAttribute("style") || "";
 
       var display = el.style.display || window.getComputedStyle(el).display;
-      if (display === "none") return null;
+      if (display === "none") return;
       var visibility = window.getComputedStyle(el).visibility;
-      if (visibility === "hidden") return null;
+      if (visibility === "hidden") return;
       var opacity = parseFloat(window.getComputedStyle(el).opacity);
-      if (!isNaN(opacity) && opacity < 0.01) return null;
+      if (!isNaN(opacity) && opacity < 0.01) return;
 
-      if (tag === "br") return null;
-      if (tag === "script" || tag === "style" || tag === "noscript") return null;
+      if (tag === "br") return;
+      if (tag === "script" || tag === "style" || tag === "noscript") return;
 
       var text = "";
       for (var i = 0; i < el.childNodes.length; i++) {
@@ -179,15 +172,6 @@ var EXTRACT_SCRIPT = `
       }
 
       var props = getCS(el);
-
-      var pos = props["position"] || "static";
-      var isPositioned = pos === "absolute" || pos === "fixed";
-      var posAncestor = null;
-      var posAncestorRect = null;
-      if (isPositioned) {
-        posAncestor = findPositionedAncestor(el);
-        posAncestorRect = posAncestor ? posAncestor.getBoundingClientRect() : null;
-      }
 
       var svgPaths = [];
       var svgRasterId = -1;
@@ -251,20 +235,12 @@ var EXTRACT_SCRIPT = `
 
       var figmaName = el.getAttribute("data-figma-name") || "";
 
-      var children = [];
-      for (var p = 0; p < pseudos.length; p++) {
-        children.push(pseudos[p]);
-      }
-      for (var j = 0; j < el.children.length; j++) {
-        var child = walk(el.children[j], depth + 1);
-        if (child) children.push(child);
-      }
-
-      var node = {
+      var element = {
+        id: nextId++,
         tag: tag, cls: cls, style: style, text: text,
         x: Math.round(rect.x), y: Math.round(rect.y),
         w: Math.round(rect.width), h: Math.round(rect.height),
-        props: props, children: children, attrs: attrs,
+        props: props, attrs: attrs,
         placeholder: el.placeholder || "",
         inputType: el.type || "",
         value: el.value || "",
@@ -274,29 +250,31 @@ var EXTRACT_SCRIPT = `
         figmaName: figmaName,
       };
 
-      if (isPositioned && posAncestorRect) {
-        node.positionedAncestor = {
-          x: Math.round(posAncestorRect.x),
-          y: Math.round(posAncestorRect.y),
-          w: Math.round(posAncestorRect.width),
-          h: Math.round(posAncestorRect.height),
-        };
-      }
-
       if (svgRasterId >= 0) {
-        node.svgRasterId = svgRasterId;
+        element.svgRasterId = svgRasterId;
       }
       if (svgPaths.length > 0) {
-        node.svgPaths = svgPaths;
+        element.svgPaths = svgPaths;
       }
 
-      return node;
-    } catch(e) { return null; }
+      flatElements.push(element);
+
+      for (var p = 0; p < pseudos.length; p++) {
+        walk_pseudo(pseudos[p]);
+      }
+      for (var j = 0; j < el.children.length; j++) {
+        walk(el.children[j], depth + 1);
+      }
+    } catch(e) { /* skip broken nodes */ }
   }
 
-  var domTree = walk(document.body, 0);
+  function walk_pseudo(pseudoEl) {
+    if (pseudoEl) flatElements.push(pseudoEl);
+  }
 
-  return { domTree: domTree, svgRasterList: svgRasterList };
+  walk(document.body, 0);
+
+  return { flatElements: flatElements, svgRasterList: svgRasterList };
 })()
 `;
 
@@ -315,7 +293,7 @@ async function extractFullDOM(htmlFilePath, options) {
     await new Promise(function(r) { setTimeout(r, 800); });
 
     var result = await page.evaluate(EXTRACT_SCRIPT);
-    var domTree = result.domTree;
+    var flatElements = result.flatElements;
     var svgRasterList = result.svgRasterList || [];
     var pageHeight = await page.evaluate(function() { return document.documentElement.scrollHeight; });
 
@@ -345,7 +323,7 @@ async function extractFullDOM(htmlFilePath, options) {
       }, svgRasterList);
     }
 
-    return { domTree: domTree, pageWidth: width, pageHeight: pageHeight, rasterizedSvgs: rasterizedSvgs };
+    return { flatElements: flatElements, pageWidth: width, pageHeight: pageHeight, rasterizedSvgs: rasterizedSvgs };
   }, { timeout: 120000, retries: 3 });
 }
 

@@ -6,47 +6,7 @@ const {
   parseColor, computeSHA1, computeSHA1Bytes,
 } = require("./utils");
 const { extractStyles } = require("./style-extractor");
-
-function isNodeEmpty(node) {
-  var fills = node.fillPaints || [];
-  var hasFill = fills.some(function(f) {
-    if (f.type === "SOLID" && f.color) return f.color.a > 0.01;
-    if (f.type === "IMAGE") return true;
-    if (f.type && f.type.indexOf("GRADIENT") >= 0) return true;
-    return false;
-  });
-  var hasStroke = node.strokeWeight > 0;
-  var hasEffects = node.effects && node.effects.length > 0;
-  var hasAutoLayout = node.stackMode && node.stackMode !== "NONE";
-  var hasClip = node.frameMaskDisabled === false;
-  return !hasFill && !hasStroke && !hasEffects && !hasAutoLayout && !hasClip;
-}
-
-function extractTextStyles(domTree) {
-  var styleMap = new Map();
-  function walk(el) {
-    if (!el) return;
-    var props = el.props || {};
-    if (el.text && el.text.length > 0 && (props["font-size"] || props["font-family"])) {
-      var key = [fontFamily(props["font-family"]), fontWeight(props["font-weight"] || "400"),
-        parseFloat(props["font-size"]) || 16, props["color"] || "#1A1A1A"].join("|");
-      if (!styleMap.has(key)) {
-        styleMap.set(key, {
-          family: fontFamily(props["font-family"]),
-          style: fontWeight(props["font-weight"] || "400"),
-          size: parseFloat(props["font-size"]) || 16,
-          color: parseColor(props["color"] || "#1A1A1A") || { r: 0.1, g: 0.1, b: 0.1, a: 1 },
-          lineHeight: parseFloat(props["line-height"]) || (parseFloat(props["font-size"]) || 16) * 1.6,
-          letterSpacing: parseFloat(props["letter-spacing"]) || 0,
-          count: 1,
-        });
-      } else { styleMap.get(key).count++; }
-    }
-    if (el.children) el.children.forEach(walk);
-  }
-  walk(domTree);
-  return Array.from(styleMap.values()).sort(function(a, b) { return b.count - a.count; }).slice(0, 20);
-}
+const { detectAutoLayout } = require("./layout");
 
 function mapJustifyContent(jc) {
   if (jc === "center") return "CENTER";
@@ -134,46 +94,30 @@ function createTextNode(guidVal, name, parentGuid, position, size, transform, te
   return node;
 }
 
-async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, doc, parentAutoLayout, ctx) {
-  if (!el) return [];
+async function convertNode(treeNode, parentGuid, parentElement, childIndex, assetManager, doc, ctx) {
+  if (!treeNode || !treeNode.element) return [];
   var nodes = [];
+  var el = treeNode.element;
   var tag = el.tag;
   var cls = el.cls || "";
   var props = el.props || {};
   var vpX = el.x, vpY = el.y, w = el.w, h = el.h;
-
-  var pos = props["position"] || "static";
-  var isAbsFixed = pos === "absolute" || pos === "fixed";
-  var isRelative = pos === "relative";
-  var relX, relY;
-
-  if (isAbsFixed && el.positionedAncestor) {
-    relX = vpX - el.positionedAncestor.x;
-    relY = vpY - el.positionedAncestor.y;
-  } else if (isRelative) {
-    relX = (vpX - parentX) + ((parseFloat(props["left"]) || 0) || -(parseFloat(props["right"]) || 0));
-    relY = (vpY - parentY) + ((parseFloat(props["top"]) || 0) || -(parseFloat(props["bottom"]) || 0));
-  } else if (parentAutoLayout) {
-    relX = 0; relY = 0;
-  } else {
-    relX = vpX - parentX; relY = vpY - parentY;
-  }
-
-  var s = extractStyles(props, w, h);
-  var hasText = el.text && el.text.length > 0;
-  var hasChildren = el.children && el.children.length > 0;
-
-  var isSvg = ["svg","path","circle","rect","line","polyline","polygon","ellipse"].indexOf(tag) >= 0;
-  var isPseudo = tag === "pseudo-before" || tag === "pseudo-after";
-  var isTextInput = tag === "input" || tag === "textarea" || tag === "select";
-  var isButton = tag === "button" || cls.includes("btn") || cls.includes("button");
-  var isImage = tag === "img";
 
   var display = props["display"] || "block";
   var visibility = props["visibility"] || "visible";
   var opacityVal = parseFloat(props["opacity"]);
   if (display === "none" || visibility === "hidden") return [];
   if (!isNaN(opacityVal) && opacityVal < 0.01) return [];
+
+  var isSvg = ["svg","path","circle","rect","line","polyline","polygon","ellipse"].indexOf(tag) >= 0;
+  var isPseudo = tag === "pseudo-before" || tag === "pseudo-after";
+  var isTextInput = tag === "input" || tag === "textarea" || tag === "select";
+  var isButton = tag === "button" || cls.includes("btn") || cls.includes("button");
+  var isImage = tag === "img";
+  var hasText = el.text && el.text.length > 0;
+  var childCount = treeNode.children.length;
+
+  var s = extractStyles(props, w, h);
 
   var fill = s.fills.slice();
   if (isButton && fill.length === 0) fill = solidFill(props["background-color"] || "#3B82F6");
@@ -192,9 +136,20 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
   var overflow = props["overflow"] || "visible";
   var clipsContent = overflow === "hidden" || overflow === "scroll" || overflow === "auto";
 
+  var relX = parentElement ? vpX - parentElement.x : 0;
+  var relY = parentElement ? vpY - parentElement.y : 0;
+
+  var layout = detectAutoLayout(el, childCount);
+  var useAutoLayout = layout.isAutoLayout;
+
+  if (useAutoLayout) {
+    relX = 0;
+    relY = 0;
+  }
+
   if (w > 0 && h > 0) {
     containerGuid = guid(1, ctx.nextId++);
-    var isContainer = !isSvg && !isImage && (hasChildren || hasText);
+    var isContainer = !isSvg && !isImage && (childCount > 0 || hasText);
     var nodeType = "RECTANGLE";
     if (tag === "circle" || tag === "ellipse") nodeType = "ELLIPSE";
     if (isContainer) nodeType = "FRAME";
@@ -208,35 +163,29 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
     var node;
     if (nodeType === "FRAME") {
       var autoLayoutProps = {};
-      var isFlex = display === "flex" || display === "inline-flex";
-      var isGrid = display === "grid" || display === "inline-grid";
-      if (isFlex || isGrid) {
-        var flexDir = props["flex-direction"] || "row";
-        autoLayoutProps.stackMode = (flexDir === "column" || flexDir === "column-reverse") ? "VERTICAL" : "HORIZONTAL";
-        autoLayoutProps.stackSpacing = parseFloat(props["gap"]) || parseFloat(props["column-gap"]) || parseFloat(props["row-gap"]) || 0;
-        autoLayoutProps.stackJustify = mapJustifyContent(props["justify-content"] || "flex-start");
-        autoLayoutProps.stackCounterAlign = mapAlignItems(props["align-items"] || "stretch");
-        if (props["flex-wrap"] === "wrap" || props["flex-wrap"] === "wrap-reverse") {
+      if (useAutoLayout) {
+        autoLayoutProps.stackMode = layout.stackMode;
+        autoLayoutProps.stackSpacing = layout.stackSpacing;
+        autoLayoutProps.stackJustify = layout.stackJustify;
+        autoLayoutProps.stackCounterAlign = layout.stackCounterAlign;
+        if (layout.stackWrapEnabled) {
           autoLayoutProps.stackWrap = "WRAP";
         }
-        var pt = parseFloat(props["padding-top"]) || 0;
-        var pr = parseFloat(props["padding-right"]) || 0;
-        var pb = parseFloat(props["padding-bottom"]) || 0;
-        var pl = parseFloat(props["padding-left"]) || 0;
-        if (pt > 0 || pr > 0 || pb > 0 || pl > 0) {
-          autoLayoutProps.stackPaddingTop = pt;
-          autoLayoutProps.stackPaddingRight = pr;
-          autoLayoutProps.stackPaddingBottom = pb;
-          autoLayoutProps.stackPaddingLeft = pl;
+        if (layout.stackPaddingTop > 0 || layout.stackPaddingRight > 0 ||
+            layout.stackPaddingBottom > 0 || layout.stackPaddingLeft > 0) {
+          autoLayoutProps.stackPaddingTop = layout.stackPaddingTop;
+          autoLayoutProps.stackPaddingRight = layout.stackPaddingRight;
+          autoLayoutProps.stackPaddingBottom = layout.stackPaddingBottom;
+          autoLayoutProps.stackPaddingLeft = layout.stackPaddingLeft;
         }
-        autoLayoutProps.stackPrimarySizing = "FIXED";
-        autoLayoutProps.stackCounterSizing = "FIXED";
-        if (isGrid) autoLayoutProps.name = name + " [Grid]";
+        autoLayoutProps.stackPrimarySizing = layout.stackPrimarySizing;
+        autoLayoutProps.stackCounterSizing = layout.stackCounterSizing;
+        if (layout.isGrid) autoLayoutProps.name = name + " [Grid]";
       }
 
       var allExtra = {};
       for (var k in extra) allExtra[k] = extra[k];
-      for (var k in autoLayoutProps) allExtra[k] = autoLayoutProps[k];
+      for (var k2 in autoLayoutProps) allExtra[k2] = autoLayoutProps[k2];
       node = createFrameNode(containerGuid, name, parentGuid, zPos,
         { x: Math.max(w, 1), y: Math.max(h, 1) }, makePos(relX, relY), allExtra);
       node.fillPaints = fill;
@@ -346,10 +295,10 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
     ctx.pendingImages.push({ svgRasterId: el.svgRasterId, nodeGuid: containerGuid, scaleMode: "FIT" });
   } else if (isSvg && el.svgPaths && el.svgPaths.length > 0 && !containerGuid) {
     containerGuid = guid(1, ctx.nextId++);
-    var svgFill = parseColor(el.attrs && el.attrs.fill);
+    var svgFill2 = parseColor(el.attrs && el.attrs.fill);
     nodes.push(createRectNode(containerGuid, "SVG Icon",
       parentGuid, zPos, { x: Math.max(w, 1), y: Math.max(h, 1) }, makePos(relX, relY),
-      svgFill ? [{ type: "SOLID", color: svgFill, opacity: 1, visible: true, blendMode: "NORMAL" }] : fill,
+      svgFill2 ? [{ type: "SOLID", color: svgFill2, opacity: 1, visible: true, blendMode: "NORMAL" }] : fill,
       { effects: s.effects }));
   }
 
@@ -423,7 +372,10 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
     var textDecoration = s.textProps ? mapTextDecoration(props["text-decoration"]) : undefined;
 
     var textX = 0, textY = 0;
-    if (!containerGuid) { textX = relX; textY = relY; }
+    if (!useAutoLayout) {
+      textX = relX;
+      textY = relY;
+    }
 
     var fontWeightVal = fontWeight(props["font-weight"] || "400");
     var fontStyleVal = props["font-style"] === "italic" ? " Italic" : "";
@@ -431,7 +383,7 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
 
     var textNode = createTextNode(guid(1, ctx.nextId++),
       displayText.substring(0, 60),
-      containerGuid || parentGuid, zOrderChar(hasChildren ? 99 : 0),
+      containerGuid || parentGuid, zOrderChar(childCount > 0 ? 99 : 0),
       { x: Math.max(w, 1), y: Math.max(h, 1) }, makePos(textX, textY),
       displayText,
       {
@@ -448,13 +400,9 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
     nodes.push(textNode);
   }
 
-  if (el.children) {
-    var targetGuid = containerGuid || parentGuid;
-    var elAutoLayout = containerGuid !== null && (props["display"] === "flex" || props["display"] === "inline-flex" || props["display"] === "grid" || props["display"] === "inline-grid");
-    for (var i = 0; i < el.children.length; i++) {
-      var childNodes = await buildNodes(el.children[i], targetGuid, vpX, vpY, i, assetManager, doc, elAutoLayout, ctx);
-      nodes.push(...childNodes);
-    }
+  for (var i = 0; i < treeNode.children.length; i++) {
+    var childNodes = await convertNode(treeNode.children[i], containerGuid || parentGuid, el, i, assetManager, doc, ctx);
+    nodes.push(...childNodes);
   }
 
   return nodes;
@@ -490,65 +438,7 @@ function injectPendingImages(doc, pendingImages, assetManager, rasterizedSvgs) {
   }
 }
 
-function flattenTree(doc) {
-  var nodes = doc.message.nodeChanges;
-  var pageGuidKey = null;
-  for (var n of nodes) {
-    if (n.type === "FRAME" && n.name && n.size && n.size.x >= 400) {
-      pageGuidKey = n.guid.sessionID + ":" + n.guid.localID;
-      break;
-    }
-  }
-
-  var removed = 0, changed = true;
-  while (changed) {
-    changed = false;
-    for (var i = nodes.length - 1; i >= 0; i--) {
-      var node = nodes[i];
-      if (node.type !== "FRAME") continue;
-      var nodeKey = node.guid.sessionID + ":" + node.guid.localID;
-      if (pageGuidKey && nodeKey === pageGuidKey) continue;
-      if (node.name === "Components" || node.name === "Colors" || node.name === "Text Styles") continue;
-      if (!isNodeEmpty(node)) continue;
-
-      var childKeys = new Set();
-      for (var j = 0; j < nodes.length; j++) {
-        var c = nodes[j];
-        if (!c.parentIndex || !c.parentIndex.guid) continue;
-        var cKey = c.parentIndex.guid.sessionID + ":" + c.parentIndex.guid.localID;
-        if (cKey === nodeKey) childKeys.add(j);
-      }
-
-      var childIndices = Array.from(childKeys);
-      if (childIndices.length === 0) {
-        nodes.splice(i, 1);
-        removed++;
-        changed = true;
-        continue;
-      }
-      if (childIndices.length === 1) {
-        var childIdx = childIndices[0];
-        var child = nodes[childIdx];
-        child.parentIndex = { guid: node.parentIndex.guid, position: node.parentIndex.position };
-        if (child.transform && node.transform) {
-          child.transform = {
-            m00: 1, m01: 0,
-            m02: Math.round((child.transform.m02 || 0) + (node.transform.m02 || 0)),
-            m10: 0, m11: 1,
-            m12: Math.round((child.transform.m12 || 0) + (node.transform.m12 || 0)),
-          };
-        }
-        if (!child.pluginData || child.pluginData.length === 0) child.pluginData = pluginData(child.type === "TEXT");
-        nodes.splice(i, 1);
-        removed++;
-        changed = true;
-      }
-    }
-  }
-  return removed;
-}
-
-function generateThumbnail(domTree, pageWidth, pageHeight, doc) {
+function generateThumbnail(tree, pageWidth, pageHeight, doc) {
   try {
     var { createCanvas } = require("canvas");
     var tw = 400, th = 225;
@@ -564,13 +454,14 @@ function generateThumbnail(domTree, pageWidth, pageHeight, doc) {
     ctx.save();
     ctx.scale(scale, scale);
 
-    function drawNode(node, offsetX, offsetY) {
-      if (!node) return;
-      var nodeProps = node.props || {};
-      var x = (node.x || 0) + offsetX;
-      var y = (node.y || 0) + offsetY;
-      var nw = node.w || 0;
-      var nh = node.h || 0;
+    function drawNode(treeNode, offsetX, offsetY) {
+      if (!treeNode || !treeNode.element) return;
+      var el = treeNode.element;
+      var nodeProps = el.props || {};
+      var x = (el.x || 0) + offsetX;
+      var y = (el.y || 0) + offsetY;
+      var nw = el.w || 0;
+      var nh = el.h || 0;
       if (nw < 1 || nh < 1) return;
 
       var nDisplay = nodeProps["display"] || "block";
@@ -598,16 +489,7 @@ function generateThumbnail(domTree, pageWidth, pageHeight, doc) {
         }
       }
 
-      var text = "";
-      for (var ci = 0; ci < (node.children || []).length; ci++) {
-        var child = node.children[ci];
-        if (child && child.text && child.text.length > 0) {
-          text = child.text;
-          break;
-        }
-      }
-      if (!text && node.text) text = node.text;
-
+      var text = el.text || "";
       if (text && text.length > 0) {
         var fontSize = parseFloat(nodeProps["font-size"]) || 14;
         var color = nodeProps["color"] || "#000000";
@@ -621,14 +503,14 @@ function generateThumbnail(domTree, pageWidth, pageHeight, doc) {
         ctx.restore();
       }
 
-      if (node.children) {
-        for (var ci2 = 0; ci2 < node.children.length; ci2++) {
-          drawNode(node.children[ci2], offsetX, offsetY);
+      if (treeNode.children) {
+        for (var ci = 0; ci < treeNode.children.length; ci++) {
+          drawNode(treeNode.children[ci], offsetX, offsetY);
         }
       }
     }
 
-    if (domTree) drawNode(domTree, 0, 0);
+    if (tree) drawNode(tree, 0, 0);
     ctx.restore();
 
     var buf = canvas.toBuffer("image/png");
@@ -638,7 +520,7 @@ function generateThumbnail(domTree, pageWidth, pageHeight, doc) {
   }
 }
 
-async function buildDocument(domTree, pageWidth, pageHeight, pageName, assetManager, rasterizedSvgs) {
+async function buildDocument(tree, pageWidth, pageHeight, pageName, assetManager, rasterizedSvgs) {
   var ctx = { nextId: 500, pageGuid: null, pendingImages: [] };
   var doc = createEmptyFigDoc();
 
@@ -658,12 +540,12 @@ async function buildDocument(domTree, pageWidth, pageHeight, pageName, assetMana
     pluginData: pluginData(false),
   });
 
-  var allNodes = await buildNodes(domTree, ctx.pageGuid, 0, 0, 0, assetManager, doc, false, ctx);
+  var pageElement = tree.element;
+  var allNodes = await convertNode(tree, ctx.pageGuid, pageElement, 0, assetManager, doc, ctx);
   doc.message.nodeChanges.push(...allNodes);
   injectPendingImages(doc, ctx.pendingImages, assetManager, rasterizedSvgs);
-  flattenTree(doc);
 
-  generateThumbnail(domTree, pageWidth, pageHeight, doc);
+  generateThumbnail(tree, pageWidth, pageHeight, doc);
   doc.meta = {
     name: pageName || "HTML Export",
     file_name: pageName || "HTML Export",

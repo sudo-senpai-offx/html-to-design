@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs-extra");
 const { extractFullDOM } = require("../lib/dom-extractor");
+const { buildTree } = require("../lib/tree-builder");
 const { buildDocument } = require("../lib/figma-builder");
 const { writeFigBuffer } = require("../lib/fig-writer");
 const { AssetManager } = require("../lib/asset-manager");
@@ -13,19 +14,23 @@ async function convertToFigma(html, options) {
   await fs.writeFile(tempHtmlPath, html, "utf-8");
 
   try {
-    console.log(`  Extracting DOM...`);
-    const { domTree, pageWidth, pageHeight, rasterizedSvgs } = await extractFullDOM(tempHtmlPath, {
+    console.log(`  Extracting DOM (flat)...`);
+    const { flatElements, pageWidth, pageHeight, rasterizedSvgs } = await extractFullDOM(tempHtmlPath, {
       width,
       scale,
     });
 
-    if (!domTree) {
-      throw new Error("Failed to extract DOM tree from HTML");
+    if (!flatElements || flatElements.length === 0) {
+      throw new Error("Failed to extract DOM elements from HTML");
     }
+
+    console.log(`  Extracted ${flatElements.length} elements`);
+    console.log(`  Building visual hierarchy (rectangle containment)...`);
+    const tree = buildTree(flatElements, pageWidth, pageHeight);
 
     console.log(`  Building Figma nodes...`);
     const assetManager = new AssetManager();
-    const doc = await buildDocument(domTree, pageWidth, pageHeight, "HTML Export", assetManager, rasterizedSvgs);
+    const doc = await buildDocument(tree, pageWidth, pageHeight, "HTML Export", assetManager, rasterizedSvgs);
 
     if (!doc || !doc.message) {
       throw new Error("Failed to build Figma document structure");
