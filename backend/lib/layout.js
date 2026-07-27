@@ -78,7 +78,7 @@ function detectAutoLayout(el, childCount) {
   var stackCounterAlign = "MIN";
   if (alignItems === "center") stackCounterAlign = "CENTER";
   else if (alignItems === "flex-end" || alignItems === "end") stackCounterAlign = "MAX";
-  else if (alignItems === "stretch") stackCounterAlign = "Stretch";
+  else     if (alignItems === "stretch") stackCounterAlign = "STRETCH";
   else if (alignItems === "baseline") stackCounterAlign = "BASELINE";
 
   var width = parseFloat(props["width"]) || 0;
@@ -92,7 +92,7 @@ function detectAutoLayout(el, childCount) {
     stackJustify: stackJustify,
     stackCounterAlign: stackCounterAlign,
     stackWrapEnabled: stackWrapEnabled,
-    stackPrimarySizing: hasExplicitSize ? "FIXED" : "HUG",
+    stackPrimarySizing: hasExplicitSize ? "FIXED" : "RESIZE_TO_FIT",
     stackCounterSizing: "FIXED",
     stackPaddingTop: paddingTop,
     stackPaddingRight: paddingRight,

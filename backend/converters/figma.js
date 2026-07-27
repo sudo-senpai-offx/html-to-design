@@ -19,13 +19,26 @@ async function convertToFigma(html, options) {
       scale,
     });
 
+    if (!domTree) {
+      throw new Error("Failed to extract DOM tree from HTML");
+    }
+
     console.log(`  Building Figma nodes...`);
     const assetManager = new AssetManager();
     const doc = await buildDocument(domTree, pageWidth, pageHeight, "HTML Export", assetManager, rasterizedSvgs);
 
+    if (!doc || !doc.message) {
+      throw new Error("Failed to build Figma document structure");
+    }
+
     console.log(`  Serializing .fig file...`);
     const figBuffer = await writeFigBuffer(doc);
 
+    if (!figBuffer || figBuffer.length === 0) {
+      throw new Error("Generated .fig file is empty");
+    }
+
+    console.log(`  .fig file: ${(figBuffer.length / 1024).toFixed(1)}KB`);
     return figBuffer;
   } finally {
     await fs.remove(tempHtmlPath).catch(() => {});

@@ -416,7 +416,7 @@ async function compare(html, css, format, convertedBuffer) {
 
       var nodeRatio = origBoxCount > 0 ? Math.min(figFrameCount + figRectCount, origBoxCount) / origBoxCount : 0;
       var textRatio = origTextCount > 0 ? Math.min(figTextNodeCount, origTextCount) / origTextCount : 0;
-      var structuralScore = (nodeRatio * 60 + textRatio * 40) * 100;
+      var structuralScore = nodeRatio * 60 + textRatio * 40;
 
       var figNames = figNodes.filter(function(n) { return n.name; }).map(function(n) { return n.name; });
       var origNames = origFlat.filter(function(n) { return n.node.cls; }).map(function(n) { return n.node.cls.split(" ")[0]; });

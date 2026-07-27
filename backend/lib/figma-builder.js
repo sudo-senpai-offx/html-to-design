@@ -1,13 +1,11 @@
-const { createEmptyFigDoc } = require("openfig-core");
+const { createEmptyFigDoc, nodeId } = require("openfig-core");
 const {
-  solidFill, resolveFills, resolveImageFill, parseShadow, parseBoxShadows,
+  solidFill, resolveFills, resolveImageFill, parseShadow,
   getStroke, getRadius, fontFamily, fontWeight,
   makePos, zOrderChar, guid, pluginData, readableName,
   parseColor, computeSHA1, computeSHA1Bytes,
-  parseGradient,
 } = require("./utils");
 const { extractStyles } = require("./style-extractor");
-const { detectAutoLayout } = require("./layout");
 
 function isNodeEmpty(node) {
   var fills = node.fillPaints || [];
@@ -22,48 +20,6 @@ function isNodeEmpty(node) {
   var hasAutoLayout = node.stackMode && node.stackMode !== "NONE";
   var hasClip = node.frameMaskDisabled === false;
   return !hasFill && !hasStroke && !hasEffects && !hasAutoLayout && !hasClip;
-}
-
-function extractDesignTokens(domTree) {
-  var colorMap = new Map();
-  var spacingSet = new Set();
-  var radiusSet = new Set();
-
-  function walk(el) {
-    if (!el) return;
-    var props = el.props || {};
-    var colors = [
-      props["background-color"], props["color"],
-      props["border-top-color"], props["border-right-color"],
-      props["border-bottom-color"], props["border-left-color"],
-    ];
-    for (var c of colors) {
-      if (c && c !== "transparent" && c !== "currentColor" && c !== "inherit") {
-        var parsed = parseColor(c);
-        if (parsed && parsed.a > 0.01) {
-          var hex = "#" + [parsed.r, parsed.g, parsed.b].map(function(v) {
-            return Math.round(v * 255).toString(16).padStart(2, "0");
-          }).join("");
-          colorMap.set(hex.toLowerCase(), (colorMap.get(hex.toLowerCase()) || 0) + 1);
-        }
-      }
-    }
-    ["padding-top", "padding-right", "padding-bottom", "padding-left",
-     "gap", "row-gap", "column-gap"].forEach(function(p) {
-      var val = parseFloat(props[p]);
-      if (val && val > 0 && val <= 200) spacingSet.add(val);
-    });
-    var rad = parseFloat(props["border-radius"]);
-    if (rad && rad > 0 && rad <= 100) radiusSet.add(rad);
-    if (el.children) el.children.forEach(walk);
-  }
-  walk(domTree);
-
-  return {
-    colors: Array.from(colorMap.entries()).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 30).map(function(e) { return e[0]; }),
-    spacing: Array.from(spacingSet).sort(function(a, b) { return a - b; }).slice(0, 20),
-    radius: Array.from(radiusSet).sort(function(a, b) { return a - b; }).slice(0, 10),
-  };
 }
 
 function extractTextStyles(domTree) {
@@ -96,7 +52,7 @@ function mapJustifyContent(jc) {
   if (jc === "center") return "CENTER";
   if (jc === "flex-end" || jc === "end") return "MAX";
   if (jc === "space-between") return "SPACE_BETWEEN";
-  if (jc === "space-around" || jc === "space-evenly") return "SPACE_BETWEEN";
+  if (jc === "space-around" || jc === "space-evenly") return "SPACE_EVENLY";
   return "MIN";
 }
 
@@ -104,87 +60,81 @@ function mapAlignItems(ai) {
   if (ai === "center") return "CENTER";
   if (ai === "flex-end" || ai === "end") return "MAX";
   if (ai === "stretch") return "STRETCH";
+  if (ai === "baseline") return "BASELINE";
   return "MIN";
 }
 
-function buildDesignTokens(doc, canvasGuid, domTree, ctx) {
-  var tokens = extractDesignTokens(domTree);
-
-  var colorsFrameGuid = guid(1, ctx.nextId++);
-  doc.message.nodeChanges.push({
-    guid: colorsFrameGuid, type: "FRAME", name: "Colors",
-    phase: "CREATED", parentIndex: { guid: canvasGuid, position: "!" },
-    visible: true, opacity: 1,
-    size: { x: tokens.colors.length * 60, y: 80 },
-    transform: makePos(0, 0),
-    fillPaints: [], strokeWeight: 0, strokeAlign: "OUTSIDE",
-    frameMaskDisabled: false,
-    stackMode: "HORIZONTAL", stackSpacing: 8,
-    pluginData: pluginData(false),
-  });
-  for (var hex of tokens.colors) {
-    var c = parseColor(hex);
-    if (!c) continue;
-    doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "FRAME", name: hex,
-      phase: "CREATED", parentIndex: { guid: colorsFrameGuid, position: zOrderChar(0) },
-      visible: true, opacity: 1, size: { x: 50, y: 50 },
-      transform: makePos(0, 0),
-      fillPaints: [{ type: "SOLID", color: c, opacity: 1, visible: true, blendMode: "NORMAL" }],
-      strokeWeight: 1, strokeAlign: "INSIDE",
-      strokePaints: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 0.1 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
-      cornerRadius: 8, frameMaskDisabled: false,
-      pluginData: pluginData(false),
-    });
-  }
+function mapTextDecoration(td) {
+  if (!td) return undefined;
+  if (td.includes("underline")) return "UNDERLINE";
+  if (td.includes("line-through")) return "STRIKETHROUGH";
+  return undefined;
 }
 
-function buildTextStyles(doc, canvasGuid, domTree, ctx) {
-  var textStyles = extractTextStyles(domTree);
-  var stylesFrameGuid = guid(1, ctx.nextId++);
-  doc.message.nodeChanges.push({
-    guid: stylesFrameGuid, type: "FRAME", name: "Text Styles",
-    phase: "CREATED", parentIndex: { guid: canvasGuid, position: "!" },
+function createFrameNode(guidVal, name, parentGuid, position, size, transform, extra) {
+  var node = {
+    guid: guidVal, type: "FRAME", name: name,
+    phase: "CREATED", parentIndex: { guid: parentGuid, position: position },
     visible: true, opacity: 1,
-    size: { x: 400, y: textStyles.length * 60 },
-    transform: makePos(0, 100),
-    fillPaints: [], strokeWeight: 0, strokeAlign: "OUTSIDE",
-    frameMaskDisabled: false, stackMode: "VERTICAL", stackSpacing: 4,
+    size: { x: Math.max(size.x, 1), y: Math.max(size.y, 1) },
+    transform: transform,
+    fillPaints: [],
+    strokeWeight: 0, strokeAlign: "OUTSIDE",
+    cornerRadius: 0,
+    frameMaskDisabled: true,
     pluginData: pluginData(false),
-  });
-  for (var i = 0; i < textStyles.length; i++) {
-    var ts = textStyles[i];
-    var styleName = ts.family + " " + ts.style + " " + ts.size + "px";
-    var rowGuid = guid(1, ctx.nextId++);
-    doc.message.nodeChanges.push({
-      guid: rowGuid, type: "FRAME", name: styleName.substring(0, 50),
-      phase: "CREATED", parentIndex: { guid: stylesFrameGuid, position: zOrderChar(i) },
-      visible: true, opacity: 1, size: { x: 400, y: Math.max(ts.lineHeight * 1.5, 30) },
-      transform: makePos(0, 0), fillPaints: [],
-      strokeWeight: 0, strokeAlign: "OUTSIDE", frameMaskDisabled: false,
-      stackMode: "HORIZONTAL", stackSpacing: 12,
-      pluginData: pluginData(false),
-    });
-    doc.message.nodeChanges.push({
-      guid: guid(1, ctx.nextId++), type: "TEXT", name: styleName.substring(0, 50),
-      phase: "CREATED", parentIndex: { guid: rowGuid, position: zOrderChar(0) },
-      visible: true, opacity: 1, size: { x: 300, y: ts.lineHeight },
-      transform: makePos(0, 0),
-      textData: { characters: "Aa " + styleName },
-      fontName: { family: ts.family, style: ts.style, postscript: "" },
-      fontSize: Math.min(ts.size, 32),
-      lineHeight: { value: ts.lineHeight, units: "PIXELS" },
-      letterSpacing: { value: ts.letterSpacing, units: "PIXELS" },
-      textAutoResize: "WIDTH_AND_HEIGHT",
-      textAlignHorizontal: "LEFT", textAlignVertical: "CENTER",
-      fillPaints: [{ type: "SOLID", color: ts.color, opacity: 1, visible: true, blendMode: "NORMAL" }],
-      strokeWeight: 0, strokeAlign: "OUTSIDE",
-      pluginData: pluginData(true),
-    });
+  };
+  if (extra) {
+    for (var k in extra) { node[k] = extra[k]; }
   }
+  return node;
 }
 
-async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, doc, parentAutoLayout, parentSvgRastered, ctx) {
+function createRectNode(guidVal, name, parentGuid, position, size, transform, fills, extra) {
+  var node = {
+    guid: guidVal, type: "RECTANGLE", name: name,
+    phase: "CREATED", parentIndex: { guid: parentGuid, position: position },
+    visible: true, opacity: 1,
+    size: { x: Math.max(size.x, 1), y: Math.max(size.y, 1) },
+    transform: transform,
+    fillPaints: fills || [],
+    strokeWeight: 0, strokeAlign: "OUTSIDE",
+    cornerRadius: 0,
+    frameMaskDisabled: true,
+    pluginData: pluginData(false),
+  };
+  if (extra) {
+    for (var k in extra) { node[k] = extra[k]; }
+  }
+  return node;
+}
+
+function createTextNode(guidVal, name, parentGuid, position, size, transform, textContent, fontProps, fillProps, extra) {
+  var node = {
+    guid: guidVal, type: "TEXT", name: name,
+    phase: "CREATED", parentIndex: { guid: parentGuid, position: position },
+    visible: true, opacity: 1,
+    size: { x: Math.max(size.x, 1), y: Math.max(size.y, 1) },
+    transform: transform,
+    textData: { characters: textContent },
+    fontName: { family: fontProps.family || "Inter", style: fontProps.style || "Regular", postscript: "" },
+    fontSize: fontProps.size || 16,
+    lineHeight: { value: fontProps.lineHeight || 24, units: "PIXELS" },
+    letterSpacing: { value: fontProps.letterSpacing || 0, units: "PIXELS" },
+    textAutoResize: "WIDTH_AND_HEIGHT",
+    textAlignHorizontal: fontProps.align || "LEFT",
+    textAlignVertical: "TOP",
+    fillPaints: fillProps || [{ type: "SOLID", color: { r: 0.1, g: 0.1, b: 0.1, a: 1 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
+    strokeWeight: 0, strokeAlign: "OUTSIDE",
+    pluginData: pluginData(true),
+  };
+  if (extra) {
+    for (var k in extra) { node[k] = extra[k]; }
+  }
+  return node;
+}
+
+async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetManager, doc, parentAutoLayout, ctx) {
   if (!el) return [];
   var nodes = [];
   var tag = el.tag;
@@ -218,9 +168,7 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
   var isTextInput = tag === "input" || tag === "textarea" || tag === "select";
   var isButton = tag === "button" || cls.includes("btn") || cls.includes("button");
   var isImage = tag === "img";
-  var isLink = tag === "a";
 
-  if (parentSvgRastered && isSvg && el.svgRasterId === undefined) return [];
   var display = props["display"] || "block";
   var visibility = props["visibility"] || "visible";
   var opacityVal = parseFloat(props["opacity"]);
@@ -251,45 +199,71 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
     if (tag === "circle" || tag === "ellipse") nodeType = "ELLIPSE";
     if (isContainer) nodeType = "FRAME";
 
-    var node = {
-      guid: containerGuid, type: nodeType, name: name,
-      phase: "CREATED", parentIndex: { guid: parentGuid, position: zPos },
-      visible: true, opacity: s.opacity,
-      size: { x: Math.max(w, 1), y: Math.max(h, 1) },
-      transform: makePos(relX, relY),
-      fillPaints: fill,
-      strokeWeight: s.stroke.weight,
-      strokeAlign: s.stroke.weight > 0 ? "INSIDE" : "OUTSIDE",
-      strokePaints: s.stroke.paints,
+    var extra = {
       cornerRadius: isSvg ? 0 : s.radius,
       effects: s.effects,
       frameMaskDisabled: clipsContent ? false : true,
-      pluginData: pluginData(false),
     };
 
-    if (isContainer) {
-      var display2 = props["display"] || "block";
-      var isFlex = display2 === "flex" || display2 === "inline-flex";
-      var isGrid = display2 === "grid" || display2 === "inline-grid";
+    var node;
+    if (nodeType === "FRAME") {
+      var autoLayoutProps = {};
+      var isFlex = display === "flex" || display === "inline-flex";
+      var isGrid = display === "grid" || display === "inline-grid";
       if (isFlex || isGrid) {
         var flexDir = props["flex-direction"] || "row";
-        node.stackMode = (flexDir === "column" || flexDir === "column-reverse") ? "VERTICAL" : "HORIZONTAL";
-        node.stackSpacing = parseFloat(props["gap"]) || parseFloat(props["column-gap"]) || parseFloat(props["row-gap"]) || 0;
-        node.stackJustify = mapJustifyContent(props["justify-content"] || "flex-start");
-        node.stackCounterAlign = mapAlignItems(props["align-items"] || "stretch");
-        if (props["flex-wrap"] === "wrap" || props["flex-wrap"] === "wrap-reverse") node.stackWrapEnabled = true;
+        autoLayoutProps.stackMode = (flexDir === "column" || flexDir === "column-reverse") ? "VERTICAL" : "HORIZONTAL";
+        autoLayoutProps.stackSpacing = parseFloat(props["gap"]) || parseFloat(props["column-gap"]) || parseFloat(props["row-gap"]) || 0;
+        autoLayoutProps.stackJustify = mapJustifyContent(props["justify-content"] || "flex-start");
+        autoLayoutProps.stackCounterAlign = mapAlignItems(props["align-items"] || "stretch");
+        if (props["flex-wrap"] === "wrap" || props["flex-wrap"] === "wrap-reverse") {
+          autoLayoutProps.stackWrap = "WRAP";
+        }
         var pt = parseFloat(props["padding-top"]) || 0;
         var pr = parseFloat(props["padding-right"]) || 0;
         var pb = parseFloat(props["padding-bottom"]) || 0;
         var pl = parseFloat(props["padding-left"]) || 0;
-        if (pt > 0) node.stackPaddingTop = pt;
-        if (pr > 0) node.stackPaddingRight = pr;
-        if (pb > 0) node.stackPaddingBottom = pb;
-        if (pl > 0) node.stackPaddingLeft = pl;
-        node.stackPrimarySizing = "FIXED";
-        node.stackCounterSizing = "FIXED";
-        if (isGrid) node.name = name + " [Grid]";
+        if (pt > 0 || pr > 0 || pb > 0 || pl > 0) {
+          autoLayoutProps.stackPaddingTop = pt;
+          autoLayoutProps.stackPaddingRight = pr;
+          autoLayoutProps.stackPaddingBottom = pb;
+          autoLayoutProps.stackPaddingLeft = pl;
+        }
+        autoLayoutProps.stackPrimarySizing = "FIXED";
+        autoLayoutProps.stackCounterSizing = "FIXED";
+        if (isGrid) autoLayoutProps.name = name + " [Grid]";
       }
+
+      var allExtra = {};
+      for (var k in extra) allExtra[k] = extra[k];
+      for (var k in autoLayoutProps) allExtra[k] = autoLayoutProps[k];
+      node = createFrameNode(containerGuid, name, parentGuid, zPos,
+        { x: Math.max(w, 1), y: Math.max(h, 1) }, makePos(relX, relY), allExtra);
+      node.fillPaints = fill;
+      node.strokeWeight = s.stroke.weight;
+      node.strokeAlign = s.stroke.weight > 0 ? "INSIDE" : "OUTSIDE";
+      node.strokePaints = s.stroke.paints;
+    } else if (nodeType === "ELLIPSE") {
+      node = {
+        guid: containerGuid, type: "ELLIPSE", name: name,
+        phase: "CREATED", parentIndex: { guid: parentGuid, position: zPos },
+        visible: true, opacity: s.opacity,
+        size: { x: Math.max(w, 1), y: Math.max(h, 1) },
+        transform: makePos(relX, relY),
+        fillPaints: fill, strokeWeight: s.stroke.weight,
+        strokeAlign: s.stroke.weight > 0 ? "INSIDE" : "OUTSIDE",
+        strokePaints: s.stroke.paints,
+        effects: s.effects,
+        frameMaskDisabled: true,
+        pluginData: pluginData(false),
+      };
+    } else {
+      node = createRectNode(containerGuid, name, parentGuid, zPos,
+        { x: Math.max(w, 1), y: Math.max(h, 1) }, makePos(relX, relY), fill, extra);
+      node.opacity = s.opacity;
+      node.strokeWeight = s.stroke.weight;
+      node.strokeAlign = s.stroke.weight > 0 ? "INSIDE" : "OUTSIDE";
+      node.strokePaints = s.stroke.paints;
     }
 
     if (s.blurAmount > 0) {
@@ -331,21 +305,13 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
     var imgScaleMode = "FILL";
     var objFit = props["object-fit"] || "fill";
     if (objFit === "contain") imgScaleMode = "FIT";
-    else if (objFit === "cover") imgScaleMode = "FILL";
     else if (objFit === "none") imgScaleMode = "NONE";
 
     if (!containerGuid) {
       containerGuid = guid(1, ctx.nextId++);
-      nodes.push({
-        guid: containerGuid, type: "RECTANGLE", name: (el.alt || "Image").substring(0, 50),
-        phase: "CREATED", parentIndex: { guid: parentGuid, position: zPos },
-        visible: true, opacity: s.opacity,
-        size: { x: Math.max(w, 1), y: Math.max(h, 1) },
-        transform: makePos(relX, relY),
-        fillPaints: solidFill("#f3f4f6"),
-        strokeWeight: 0, strokeAlign: "OUTSIDE", cornerRadius: s.radius,
-        frameMaskDisabled: true, pluginData: pluginData(false),
-      });
+      nodes.push(createRectNode(containerGuid, (el.alt || "Image").substring(0, 50),
+        parentGuid, zPos, { x: Math.max(w, 1), y: Math.max(h, 1) }, makePos(relX, relY),
+        solidFill("#f3f4f6"), { cornerRadius: s.radius }));
     }
     try {
       var imgResult2 = await assetManager.download(el.src);
@@ -373,75 +339,53 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
   if (isSvg && el.svgRasterId !== undefined && el.svgRasterId >= 0 && w > 0 && h > 0) {
     if (!containerGuid) {
       containerGuid = guid(1, ctx.nextId++);
-      nodes.push({
-        guid: containerGuid, type: "RECTANGLE", name: (el.figmaName || "SVG Icon").substring(0, 50),
-        phase: "CREATED", parentIndex: { guid: parentGuid, position: zPos },
-        visible: true, opacity: s.opacity,
-        size: { x: Math.max(w, 1), y: Math.max(h, 1) },
-        transform: makePos(relX, relY),
-        fillPaints: solidFill("#f3f4f6"),
-        strokeWeight: 0, strokeAlign: "OUTSIDE", frameMaskDisabled: true,
-        pluginData: pluginData(false),
-      });
+      nodes.push(createRectNode(containerGuid, (el.figmaName || "SVG Icon").substring(0, 50),
+        parentGuid, zPos, { x: Math.max(w, 1), y: Math.max(h, 1) }, makePos(relX, relY),
+        solidFill("#f3f4f6")));
     }
     ctx.pendingImages.push({ svgRasterId: el.svgRasterId, nodeGuid: containerGuid, scaleMode: "FIT" });
   } else if (isSvg && el.svgPaths && el.svgPaths.length > 0 && !containerGuid) {
     containerGuid = guid(1, ctx.nextId++);
     var svgFill = parseColor(el.attrs && el.attrs.fill);
-    nodes.push({
-      guid: containerGuid, type: "VECTOR", name: "SVG Icon",
-      phase: "CREATED", parentIndex: { guid: parentGuid, position: zPos },
-      visible: true, opacity: s.opacity,
-      size: { x: Math.max(w, 1), y: Math.max(h, 1) },
-      transform: makePos(relX, relY),
-      fillPaints: svgFill ? [{ type: "SOLID", color: svgFill, opacity: 1, visible: true, blendMode: "NORMAL" }] : fill,
-      strokeWeight: 0, strokeAlign: "OUTSIDE", effects: s.effects,
-      frameMaskDisabled: true, pluginData: pluginData(false),
-    });
+    nodes.push(createRectNode(containerGuid, "SVG Icon",
+      parentGuid, zPos, { x: Math.max(w, 1), y: Math.max(h, 1) }, makePos(relX, relY),
+      svgFill ? [{ type: "SOLID", color: svgFill, opacity: 1, visible: true, blendMode: "NORMAL" }] : fill,
+      { effects: s.effects }));
   }
 
   if (isTextInput) {
     var displayVal = el.value || el.placeholder || "";
     if (displayVal) {
-      nodes.push({
-        guid: guid(1, ctx.nextId++), type: "TEXT", name: ("Input: " + displayVal).substring(0, 50),
-        phase: "CREATED", parentIndex: { guid: containerGuid || parentGuid, position: zOrderChar(0) },
-        visible: true, opacity: s.opacity,
-        size: { x: Math.max(w - 32, 10), y: Math.max(h - 28, 10) },
-        transform: makePos(16, 14),
-        textData: { characters: displayVal },
-        fontName: { family: fontFamily(props["font-family"]), style: fontWeight(props["font-weight"]), postscript: "" },
-        fontSize: parseFloat(props["font-size"]) || 16,
-        lineHeight: { value: (parseFloat(props["font-size"]) || 16) * 1.4, units: "PIXELS" },
-        letterSpacing: { value: 0, units: "PIXELS" },
-        textAutoResize: "HEIGHT",
-        textAlignHorizontal: s.textProps ? s.textProps.align : "LEFT",
-        textAlignVertical: "TOP",
-        fillPaints: solidFill(s.textProps ? s.textProps.color : "#1A1A1A"),
-        strokeWeight: 0, strokeAlign: "OUTSIDE",
-        pluginData: pluginData(true),
-      });
+      var inputFontProps = {
+        family: fontFamily(props["font-family"]),
+        style: fontWeight(props["font-weight"]),
+        size: parseFloat(props["font-size"]) || 16,
+        lineHeight: (parseFloat(props["font-size"]) || 16) * 1.4,
+        align: s.textProps ? s.textProps.align : "LEFT",
+      };
+      nodes.push(createTextNode(guid(1, ctx.nextId++),
+        ("Input: " + displayVal).substring(0, 50),
+        containerGuid || parentGuid, zOrderChar(0),
+        { x: Math.max(w - 32, 10), y: Math.max(h - 28, 10) }, makePos(16, 14),
+        displayVal, inputFontProps,
+        solidFill(s.textProps ? s.textProps.color : "#1A1A1A")));
     }
   }
 
   if (isButton && hasText) {
-    nodes.push({
-      guid: guid(1, ctx.nextId++), type: "TEXT", name: el.text.substring(0, 50),
-      phase: "CREATED", parentIndex: { guid: containerGuid || parentGuid, position: zOrderChar(0) },
-      visible: true, opacity: s.opacity,
-      size: { x: Math.max(w, 10), y: Math.max(h, 10) },
-      transform: makePos(0, 0),
-      textData: { characters: el.text },
-      fontName: { family: fontFamily(props["font-family"]) || "Inter", style: fontWeight(props["font-weight"] || "600"), postscript: "" },
-      fontSize: parseFloat(props["font-size"]) || 16,
-      lineHeight: { value: (parseFloat(props["font-size"]) || 16) * 1.4, units: "PIXELS" },
-      letterSpacing: { value: 0, units: "PIXELS" },
-      textAutoResize: "WIDTH_AND_HEIGHT",
-      textAlignHorizontal: "CENTER", textAlignVertical: "CENTER",
-      fillPaints: solidFill(props["color"] || "#FFFFFF"),
-      strokeWeight: 0, strokeAlign: "OUTSIDE",
-      pluginData: pluginData(true),
-    });
+    var btnFontProps = {
+      family: fontFamily(props["font-family"]) || "Inter",
+      style: fontWeight(props["font-weight"] || "600"),
+      size: parseFloat(props["font-size"]) || 16,
+      lineHeight: (parseFloat(props["font-size"]) || 16) * 1.4,
+      align: "CENTER",
+    };
+    nodes.push(createTextNode(guid(1, ctx.nextId++),
+      el.text.substring(0, 50),
+      containerGuid || parentGuid, zOrderChar(0),
+      { x: Math.max(w, 10), y: Math.max(h, 10) }, makePos(0, 0),
+      el.text, btnFontProps,
+      solidFill(props["color"] || "#FFFFFF")));
   }
 
   if (hasText && !isTextInput && !isButton) {
@@ -452,10 +396,10 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
       if (tc && tc.a > 0.01) textFill = solidFill(s.textProps.color);
     }
 
-    var whiteSpace = props["white-space"] || "normal";
-    var textOverflow = props["text-overflow"] || "clip";
     var textAutoResize = "HEIGHT";
     var textTruncation = undefined;
+    var whiteSpace = props["white-space"] || "normal";
+    var textOverflow = props["text-overflow"] || "clip";
     if (whiteSpace === "nowrap" || textOverflow === "ellipsis") {
       textAutoResize = "WIDTH_AND_HEIGHT";
       if (textOverflow === "ellipsis") textTruncation = "TRUNCATE";
@@ -476,44 +420,39 @@ async function buildNodes(el, parentGuid, parentX, parentY, childIndex, assetMan
     var lineHeightVal = parseFloat(props["line-height"]);
     if (!lineHeightVal || isNaN(lineHeightVal)) lineHeightVal = fontSize * 1.6;
     var letterSpacing = parseFloat(props["letter-spacing"]) || 0;
-    var textDecoration = s.textProps ? s.textProps.decoration : undefined;
+    var textDecoration = s.textProps ? mapTextDecoration(props["text-decoration"]) : undefined;
 
     var textX = 0, textY = 0;
     if (!containerGuid) { textX = relX; textY = relY; }
 
     var fontWeightVal = fontWeight(props["font-weight"] || "400");
-    var fontStyleVal = props["font-style"] === "italic" ? "Italic" : "";
-    var fullStyle = fontWeightVal + (fontStyleVal ? " " + fontStyleVal : "");
+    var fontStyleVal = props["font-style"] === "italic" ? " Italic" : "";
+    var fullStyle = fontWeightVal + fontStyleVal;
 
-    nodes.push({
-      guid: guid(1, ctx.nextId++), type: "TEXT", name: displayText.substring(0, 60),
-      phase: "CREATED", parentIndex: { guid: containerGuid || parentGuid, position: zOrderChar(hasChildren ? 99 : 0) },
-      visible: true, opacity: s.opacity,
-      size: { x: Math.max(w, 1), y: Math.max(h, 1) },
-      transform: makePos(textX, textY),
-      textData: { characters: displayText },
-      fontName: { family: ff, style: fullStyle, postscript: "" },
-      fontSize: fontSize,
-      lineHeight: { value: lineHeightVal, units: "PIXELS" },
-      letterSpacing: { value: letterSpacing, units: "PIXELS" },
-      textAutoResize: textAutoResize,
-      textAlignHorizontal: s.textProps ? s.textProps.align : "LEFT",
-      textAlignVertical: "TOP",
-      fillPaints: textFill,
-      strokeWeight: 0, strokeAlign: "OUTSIDE",
-      textDecoration: textDecoration,
-      truncation: textTruncation,
-      effects: allEffects.length > 0 ? allEffects : undefined,
-      pluginData: pluginData(true),
-    });
+    var textNode = createTextNode(guid(1, ctx.nextId++),
+      displayText.substring(0, 60),
+      containerGuid || parentGuid, zOrderChar(hasChildren ? 99 : 0),
+      { x: Math.max(w, 1), y: Math.max(h, 1) }, makePos(textX, textY),
+      displayText,
+      {
+        family: ff, style: fullStyle, size: fontSize,
+        lineHeight: lineHeightVal, letterSpacing: letterSpacing,
+        align: s.textProps ? s.textProps.align : "LEFT",
+      }, textFill);
+
+    if (textDecoration) textNode.textDecoration = textDecoration;
+    if (textTruncation) textNode.textTruncation = textTruncation;
+    if (allEffects.length > 0) textNode.effects = allEffects;
+    textNode.opacity = s.opacity;
+    if (textAutoResize !== "WIDTH_AND_HEIGHT") textNode.textAutoResize = textAutoResize;
+    nodes.push(textNode);
   }
 
   if (el.children) {
     var targetGuid = containerGuid || parentGuid;
     var elAutoLayout = containerGuid !== null && (props["display"] === "flex" || props["display"] === "inline-flex" || props["display"] === "grid" || props["display"] === "inline-grid");
-    var childSvgRastered = parentSvgRastered || (isSvg && el.svgRasterId !== undefined && el.svgRasterId >= 0);
     for (var i = 0; i < el.children.length; i++) {
-      var childNodes = await buildNodes(el.children[i], targetGuid, vpX, vpY, i, assetManager, doc, elAutoLayout, childSvgRastered, ctx);
+      var childNodes = await buildNodes(el.children[i], targetGuid, vpX, vpY, i, assetManager, doc, elAutoLayout, ctx);
       nodes.push(...childNodes);
     }
   }
@@ -553,39 +492,56 @@ function injectPendingImages(doc, pendingImages, assetManager, rasterizedSvgs) {
 
 function flattenTree(doc) {
   var nodes = doc.message.nodeChanges;
-  var pageGuidLocal = null;
+  var pageGuidKey = null;
   for (var n of nodes) {
-    if (n.type === "FRAME" && n.name && n.size && n.size.x > 1000) {
-      pageGuidLocal = n.guid; break;
+    if (n.type === "FRAME" && n.name && n.size && n.size.x >= 400) {
+      pageGuidKey = n.guid.sessionID + ":" + n.guid.localID;
+      break;
     }
   }
+
   var removed = 0, changed = true;
   while (changed) {
     changed = false;
     for (var i = nodes.length - 1; i >= 0; i--) {
       var node = nodes[i];
       if (node.type !== "FRAME") continue;
-      if (pageGuidLocal && node.guid.localID === pageGuidLocal.localID) continue;
+      var nodeKey = node.guid.sessionID + ":" + node.guid.localID;
+      if (pageGuidKey && nodeKey === pageGuidKey) continue;
       if (node.name === "Components" || node.name === "Colors" || node.name === "Text Styles") continue;
       if (!isNodeEmpty(node)) continue;
-      var children = [];
+
+      var childKeys = new Set();
       for (var j = 0; j < nodes.length; j++) {
         var c = nodes[j];
-        if (c.parentIndex && c.parentIndex.guid && c.parentIndex.guid.localID === node.guid.localID) children.push(c);
+        if (!c.parentIndex || !c.parentIndex.guid) continue;
+        var cKey = c.parentIndex.guid.sessionID + ":" + c.parentIndex.guid.localID;
+        if (cKey === nodeKey) childKeys.add(j);
       }
-      if (children.length === 0) { nodes.splice(i, 1); removed++; changed = true; continue; }
-      if (children.length === 1) {
-        var child = children[0];
+
+      var childIndices = Array.from(childKeys);
+      if (childIndices.length === 0) {
+        nodes.splice(i, 1);
+        removed++;
+        changed = true;
+        continue;
+      }
+      if (childIndices.length === 1) {
+        var childIdx = childIndices[0];
+        var child = nodes[childIdx];
         child.parentIndex = { guid: node.parentIndex.guid, position: node.parentIndex.position };
         if (child.transform && node.transform) {
-          child.transform = { m00: 1, m01: 0,
+          child.transform = {
+            m00: 1, m01: 0,
             m02: Math.round((child.transform.m02 || 0) + (node.transform.m02 || 0)),
             m10: 0, m11: 1,
             m12: Math.round((child.transform.m12 || 0) + (node.transform.m12 || 0)),
           };
         }
         if (!child.pluginData || child.pluginData.length === 0) child.pluginData = pluginData(child.type === "TEXT");
-        nodes.splice(i, 1); removed++; changed = true;
+        nodes.splice(i, 1);
+        removed++;
+        changed = true;
       }
     }
   }
@@ -610,45 +566,36 @@ function generateThumbnail(domTree, pageWidth, pageHeight, doc) {
 
     function drawNode(node, offsetX, offsetY) {
       if (!node) return;
-      var props = node.props || {};
+      var nodeProps = node.props || {};
       var x = (node.x || 0) + offsetX;
       var y = (node.y || 0) + offsetY;
-      var w = node.w || 0;
-      var h = node.h || 0;
-      if (w < 1 || h < 1) return;
+      var nw = node.w || 0;
+      var nh = node.h || 0;
+      if (nw < 1 || nh < 1) return;
 
-      var display = props["display"] || "block";
-      var visibility = props["visibility"] || "visible";
-      var opacity = parseFloat(props["opacity"]);
-      if (display === "none" || visibility === "hidden") return;
-      if (!isNaN(opacity) && opacity < 0.01) return;
+      var nDisplay = nodeProps["display"] || "block";
+      var nVisibility = nodeProps["visibility"] || "visible";
+      var nOpacity = parseFloat(nodeProps["opacity"]);
+      if (nDisplay === "none" || nVisibility === "hidden") return;
+      if (!isNaN(nOpacity) && nOpacity < 0.01) return;
 
-      var bgColor = props["background-color"];
+      var bgColor = nodeProps["background-color"];
       if (bgColor && bgColor !== "transparent") {
         var m = bgColor.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
         if (m) {
           ctx.save();
-          ctx.globalAlpha = opacity || 1;
+          ctx.globalAlpha = nOpacity || 1;
           ctx.fillStyle = "rgb(" + m[1] + "," + m[2] + "," + m[3] + ")";
-          var radius = parseFloat(props["border-radius"]) || 0;
+          var radius = parseFloat(nodeProps["border-radius"]) || 0;
           if (radius > 0) {
             ctx.beginPath();
-            ctx.roundRect(x, y, w, h, radius);
+            ctx.roundRect(x, y, nw, nh, radius);
             ctx.fill();
           } else {
-            ctx.fillRect(x, y, w, h);
+            ctx.fillRect(x, y, nw, nh);
           }
           ctx.restore();
         }
-      }
-
-      var borderWidth = parseFloat(props["border-top-width"]) || 0;
-      if (borderWidth > 0 && props["border-top-color"] && props["border-top-color"] !== "transparent") {
-        ctx.save();
-        ctx.strokeStyle = props["border-top-color"];
-        ctx.lineWidth = borderWidth;
-        ctx.strokeRect(x + borderWidth / 2, y + borderWidth / 2, w - borderWidth, h - borderWidth);
-        ctx.restore();
       }
 
       var text = "";
@@ -662,21 +609,21 @@ function generateThumbnail(domTree, pageWidth, pageHeight, doc) {
       if (!text && node.text) text = node.text;
 
       if (text && text.length > 0) {
-        var fontSize = parseFloat(props["font-size"]) || parseFloat((node.props || {})["font-size"]) || 14;
-        var color = props["color"] || "#000000";
+        var fontSize = parseFloat(nodeProps["font-size"]) || 14;
+        var color = nodeProps["color"] || "#000000";
         ctx.save();
         ctx.fillStyle = color;
         ctx.font = fontSize + "px sans-serif";
         ctx.textBaseline = "top";
-        var maxW = w - 8;
+        var maxW = nw - 8;
         var displayText = text.length > 40 ? text.substring(0, 37) + "..." : text;
         ctx.fillText(displayText, x + 4, y + 4, maxW);
         ctx.restore();
       }
 
       if (node.children) {
-        for (var i = 0; i < node.children.length; i++) {
-          drawNode(node.children[i], offsetX, offsetY);
+        for (var ci2 = 0; ci2 < node.children.length; ci2++) {
+          drawNode(node.children[ci2], offsetX, offsetY);
         }
       }
     }
@@ -694,31 +641,35 @@ function generateThumbnail(domTree, pageWidth, pageHeight, doc) {
 async function buildDocument(domTree, pageWidth, pageHeight, pageName, assetManager, rasterizedSvgs) {
   var ctx = { nextId: 500, pageGuid: null, pendingImages: [] };
   var doc = createEmptyFigDoc();
+
   for (var n of doc.message.nodeChanges) {
     if (n.guid && n.guid.localID >= ctx.nextId) ctx.nextId = n.guid.localID + 1;
   }
   var canvasGuid = doc.message.nodeChanges.find(function(n) { return n.type === "CANVAS"; }).guid;
 
-  buildDesignTokens(doc, canvasGuid, domTree, ctx);
-  buildTextStyles(doc, canvasGuid, domTree, ctx);
-
   ctx.pageGuid = guid(1, ctx.nextId++);
   doc.message.nodeChanges.push({
-    guid: ctx.pageGuid, type: "FRAME", name: pageName,
+    guid: ctx.pageGuid, type: "FRAME", name: pageName || "HTML Export",
     phase: "CREATED", parentIndex: { guid: canvasGuid, position: "!" },
     visible: true, opacity: 1,
     size: { x: pageWidth, y: pageHeight },
     transform: { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 },
-    frameMaskDisabled: false, pluginData: pluginData(false),
+    frameMaskDisabled: false,
+    pluginData: pluginData(false),
   });
 
-  var allNodes = await buildNodes(domTree, ctx.pageGuid, 0, 0, 0, assetManager, doc, false, undefined, ctx);
+  var allNodes = await buildNodes(domTree, ctx.pageGuid, 0, 0, 0, assetManager, doc, false, ctx);
   doc.message.nodeChanges.push(...allNodes);
   injectPendingImages(doc, ctx.pendingImages, assetManager, rasterizedSvgs);
   flattenTree(doc);
 
   generateThumbnail(domTree, pageWidth, pageHeight, doc);
-  doc.meta = { file_name: pageName || "HTML Export", version: 1 };
+  doc.meta = {
+    name: pageName || "HTML Export",
+    file_name: pageName || "HTML Export",
+    version: 1,
+    canvasBackground: { r: 0.1176, g: 0.1176, b: 0.1176, a: 1 },
+  };
 
   return doc;
 }

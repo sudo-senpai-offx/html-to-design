@@ -3,6 +3,7 @@ const { convertToPdf } = require("./pdf");
 const { convertToSvg } = require("./svg");
 const { convertToFigma } = require("./figma");
 const { convertToPsd } = require("./psd");
+const { convertToXd } = require("./xd");
 
 const converters = {
   png: convertToPng,
@@ -10,6 +11,7 @@ const converters = {
   svg: convertToSvg,
   figma: convertToFigma,
   psd: convertToPsd,
+  xd: convertToXd,
 };
 
 async function convertTo(format, html, options) {

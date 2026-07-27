@@ -217,7 +217,7 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `export.${format === "figma" ? "fig" : format === "psd" ? "zip" : format}`;
+      a.download = `export.${format === "figma" ? "fig" : format === "xd" ? "sketch" : format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -225,7 +225,7 @@ export default function App() {
 
       const sizeKB = (blob.size / 1024).toFixed(1);
       setOutputFile({
-        format, blob, url, filename: `export.${format === "figma" ? "fig" : format === "psd" ? "zip" : format}`,
+        format, blob, url, filename: `export.${format === "figma" ? "fig" : format === "xd" ? "sketch" : format}`,
         size: blob.size, timestamp: Date.now(),
       });
       setConvertedBlob(blob);
@@ -290,7 +290,7 @@ export default function App() {
           <div className="p-1.5 rounded-lg bg-brand-accent/20"><Zap size={18} className="text-brand-accent" /></div>
           <div>
             <h1 className="text-sm font-bold tracking-tight">HTML to Design</h1>
-            <p className="text-[10px] text-slate-500">v2.0 — Convert HTML+CSS to PNG, PDF, SVG, Figma & PSD</p>
+            <p className="text-[10px] text-slate-500">v2.0 — Convert HTML+CSS to PNG, PDF, SVG, Figma, PSD & XD</p>
           </div>
         </div>
         <div className="flex items-center gap-1 bg-brand-medium rounded-lg p-0.5">
@@ -305,7 +305,7 @@ export default function App() {
           ))}
         </div>
         <div className="flex items-center gap-2">
-          {(["png", "pdf", "svg", "figma", "psd"] as const).map(f => (
+          {(["png", "pdf", "svg", "figma", "psd", "xd"] as const).map(f => (
             <span key={f} className="text-[9px] px-1.5 py-0.5 rounded bg-brand-medium border border-brand-light/30 text-slate-400 font-mono uppercase">
               {f}
             </span>

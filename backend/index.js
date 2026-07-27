@@ -164,7 +164,7 @@ app.get("/api/health", (req, res) => {
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     browserPool: stats,
-    formats: ["png", "pdf", "svg", "figma", "psd"],
+    formats: ["png", "pdf", "svg", "figma", "psd", "xd"],
   });
 });
 
@@ -175,7 +175,8 @@ app.get("/api/formats", (req, res) => {
       { id: "pdf", label: "PDF", description: "Print-ready PDF document" },
       { id: "svg", label: "SVG", description: "Vector graphic with raster base + text overlay" },
       { id: "figma", label: "Figma", description: ".fig file with native layers and auto-layout" },
-      { id: "psd", label: "PSD", description: "Adobe Photoshop document" },
+      { id: "psd", label: "PSD", description: "Adobe Photoshop document with editable layers" },
+      { id: "xd", label: "XD", description: "Sketch-compatible design file (opens in Figma, Sketch, Penpot, XD)" },
     ],
   });
 });
@@ -252,7 +253,7 @@ app.post("/api/convert/:format", rateLimit(10, 60000), upload.single("html"), as
 
     const fullHtml = buildHtmlDocument(htmlContent, cssContent);
 
-    const validFormats = ["png", "pdf", "svg", "figma", "psd"];
+    const validFormats = ["png", "pdf", "svg", "figma", "psd", "xd"];
     if (!validFormats.includes(format)) {
       return res.status(400).json({
         error: `Unsupported format: ${format}`,
@@ -280,13 +281,14 @@ app.post("/api/convert/:format", rateLimit(10, 60000), upload.single("html"), as
       ...pdfOptions,
     });
 
-    const ext = { png: "png", pdf: "pdf", svg: "svg", figma: "fig", psd: "psd" }[format];
+    const ext = { png: "png", pdf: "pdf", svg: "svg", figma: "fig", psd: "psd", xd: "sketch" }[format];
     const mime = {
       png: "image/png",
       pdf: "application/pdf",
       svg: "image/svg+xml",
       figma: "application/octet-stream",
       psd: "application/octet-stream",
+      xd: "application/octet-stream",
     }[format];
 
     res.setHeader("Content-Type", mime);
@@ -298,7 +300,11 @@ app.post("/api/convert/:format", rateLimit(10, 60000), upload.single("html"), as
   } catch (err) {
     console.error(`[${jobId}] FAIL ${format}:`, err.message);
     if (req.file) fs.removeSync(req.file.path);
-    res.status(500).json({ error: err.message, jobId });
+    if (res.headersSent) {
+      try { res.end(); } catch {}
+    } else {
+      res.status(500).json({ error: err.message || "Conversion failed", jobId });
+    }
   }
 });
 
@@ -342,6 +348,12 @@ app.use((err, req, res, next) => {
   }
   console.error("Unhandled error:", err);
   res.status(500).json({ error: "Internal server error" });
+});
+
+app.use((req, res, next) => {
+  req.setTimeout(300000);
+  res.setTimeout(300000);
+  next();
 });
 
 const server = app.listen(PORT, async () => {

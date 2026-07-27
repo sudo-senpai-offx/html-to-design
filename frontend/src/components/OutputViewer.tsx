@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import {
   X, Download, ZoomIn, ZoomOut, RotateCcw, Image, FileText,
-  PenTool, Figma, Layers, Copy, Check, Maximize2, Minimize2,
+  PenTool, Figma, Layers, Monitor, Copy, Check, Maximize2, Minimize2,
 } from "lucide-react";
 
 interface OutputFile {
@@ -24,8 +24,9 @@ const FORMAT_INFO: Record<string, { icon: typeof Image; label: string; color: st
   png: { icon: Image, label: "PNG", color: "text-emerald-400", description: "Raster image" },
   pdf: { icon: FileText, label: "PDF", color: "text-red-400", description: "Print-ready document" },
   svg: { icon: PenTool, label: "SVG", color: "text-purple-400", description: "Vector graphic" },
-  figma: { icon: Figma, label: "Figma", color: "text-blue-400", description: "Design file" },
+  figma: { icon: Figma, label: "Figma", color: "text-blue-400", description: ".fig design file" },
   psd: { icon: Layers, label: "PSD", color: "text-cyan-400", description: "Photoshop layers" },
+  xd: { icon: Monitor, label: "XD / Sketch", color: "text-orange-400", description: "Multi-editor design file" },
 };
 
 function formatFileSize(bytes: number): string {
@@ -196,7 +197,10 @@ function MetaViewer({ output, format }: { output: OutputFile; format: string }) 
           </div>
         </div>
         <p className="text-xs text-slate-500">
-          Open this file in {format === "figma" ? "Figma" : format === "psd" ? "Photoshop" : "a compatible application"} to edit.
+          {format === "figma" && "Open in Figma, Penpot, or compatible design tools."}
+          {format === "psd" && "Open in Photoshop, GIMP, Photopea, or Affinity Photo."}
+          {format === "xd" && "Open in Sketch, Figma, Penpot, Adobe XD, or compatible editors."}
+          {!["figma", "psd", "xd"].includes(format) && "Open this file in a compatible application to edit."}
         </p>
       </div>
     </div>
@@ -239,6 +243,7 @@ export default function OutputViewer({ output, onClose, onReExport, onCompare }:
         return <SvgViewer url={output.url} blob={output.blob} />;
       case "figma":
       case "psd":
+      case "xd":
         return <MetaViewer output={output} format={format} />;
       default:
         return <ImageViewer url={output.url} format={format} />;
