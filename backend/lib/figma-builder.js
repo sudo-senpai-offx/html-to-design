@@ -94,7 +94,7 @@ function createTextNode(guidVal, name, parentGuid, position, size, transform, te
   return node;
 }
 
-async function convertNode(treeNode, parentGuid, parentElement, childIndex, assetManager, doc, ctx) {
+async function convertNode(treeNode, parentGuid, parentElement, childIndex, assetManager, doc, ctx, parentAutoLayout) {
   if (!treeNode || !treeNode.element) return [];
   var nodes = [];
   var el = treeNode.element;
@@ -139,13 +139,13 @@ async function convertNode(treeNode, parentGuid, parentElement, childIndex, asse
   var relX = parentElement ? vpX - parentElement.x : 0;
   var relY = parentElement ? vpY - parentElement.y : 0;
 
-  var layout = detectAutoLayout(el, childCount);
-  var useAutoLayout = layout.isAutoLayout;
-
-  if (useAutoLayout) {
+  if (parentAutoLayout) {
     relX = 0;
     relY = 0;
   }
+
+  var layout = detectAutoLayout(el, childCount);
+  var useAutoLayout = layout.isAutoLayout;
 
   if (w > 0 && h > 0) {
     containerGuid = guid(1, ctx.nextId++);
@@ -312,10 +312,12 @@ async function convertNode(treeNode, parentGuid, parentElement, childIndex, asse
         lineHeight: (parseFloat(props["font-size"]) || 16) * 1.4,
         align: s.textProps ? s.textProps.align : "LEFT",
       };
+      var inputX = 16, inputY = 14;
+      if (parentAutoLayout && !containerGuid) { inputX = 0; inputY = 0; }
       nodes.push(createTextNode(guid(1, ctx.nextId++),
         ("Input: " + displayVal).substring(0, 50),
         containerGuid || parentGuid, zOrderChar(0),
-        { x: Math.max(w - 32, 10), y: Math.max(h - 28, 10) }, makePos(16, 14),
+        { x: Math.max(w - 32, 10), y: Math.max(h - 28, 10) }, makePos(inputX, inputY),
         displayVal, inputFontProps,
         solidFill(s.textProps ? s.textProps.color : "#1A1A1A")));
     }
@@ -329,10 +331,12 @@ async function convertNode(treeNode, parentGuid, parentElement, childIndex, asse
       lineHeight: (parseFloat(props["font-size"]) || 16) * 1.4,
       align: "CENTER",
     };
+    var btnX = 0, btnY = 0;
+    if (!containerGuid && !parentAutoLayout) { btnX = relX; btnY = relY; }
     nodes.push(createTextNode(guid(1, ctx.nextId++),
       el.text.substring(0, 50),
       containerGuid || parentGuid, zOrderChar(0),
-      { x: Math.max(w, 10), y: Math.max(h, 10) }, makePos(0, 0),
+      { x: Math.max(w, 10), y: Math.max(h, 10) }, makePos(btnX, btnY),
       el.text, btnFontProps,
       solidFill(props["color"] || "#FFFFFF")));
   }
@@ -372,7 +376,7 @@ async function convertNode(treeNode, parentGuid, parentElement, childIndex, asse
     var textDecoration = s.textProps ? mapTextDecoration(props["text-decoration"]) : undefined;
 
     var textX = 0, textY = 0;
-    if (!useAutoLayout) {
+    if (!containerGuid && !parentAutoLayout) {
       textX = relX;
       textY = relY;
     }
@@ -401,7 +405,7 @@ async function convertNode(treeNode, parentGuid, parentElement, childIndex, asse
   }
 
   for (var i = 0; i < treeNode.children.length; i++) {
-    var childNodes = await convertNode(treeNode.children[i], containerGuid || parentGuid, el, i, assetManager, doc, ctx);
+    var childNodes = await convertNode(treeNode.children[i], containerGuid || parentGuid, el, i, assetManager, doc, ctx, useAutoLayout);
     nodes.push(...childNodes);
   }
 
@@ -541,7 +545,11 @@ async function buildDocument(tree, pageWidth, pageHeight, pageName, assetManager
   });
 
   var pageElement = tree.element;
-  var allNodes = await convertNode(tree, ctx.pageGuid, pageElement, 0, assetManager, doc, ctx);
+  var allNodes = [];
+  for (var i = 0; i < tree.children.length; i++) {
+    var childNodes = await convertNode(tree.children[i], ctx.pageGuid, pageElement, i, assetManager, doc, ctx, false);
+    allNodes.push(...childNodes);
+  }
   doc.message.nodeChanges.push(...allNodes);
   injectPendingImages(doc, ctx.pendingImages, assetManager, rasterizedSvgs);
 

@@ -164,22 +164,69 @@ function SvgViewer({ url, blob }: { url: string; blob: Blob }) {
   );
 }
 
-function MetaViewer({ output, format }: { output: OutputFile; format: string }) {
+function DesignFileViewer({ output, format }: { output: OutputFile; format: string }) {
   const info = FORMAT_INFO[format] || FORMAT_INFO.png;
   const Icon = info.icon;
+  const [thumbnail, setThumbnail] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function extractThumbnail() {
+      try {
+        const JSZip = (await import("jszip")).default;
+        const zip = await JSZip.loadAsync(output.blob);
+
+        let pngFile = null;
+        if (format === "figma") {
+          pngFile = zip.file("thumbnail.png");
+        } else if (format === "psd") {
+          pngFile = zip.file("_full-page.png") || zip.file("thumbnail.png");
+        } else if (format === "xd") {
+          const thumbDir = zip.folder("thumbnails");
+          if (thumbDir) {
+            const files = Object.keys(thumbDir.files);
+            pngFile = files.length > 0 ? thumbDir.file(files[0]) : null;
+          }
+        }
+
+        if (pngFile && !cancelled) {
+          const blob = await pngFile.async("blob");
+          setThumbnail(URL.createObjectURL(blob));
+        }
+      } catch {}
+      if (!cancelled) setLoading(false);
+    }
+    extractThumbnail();
+    return () => { cancelled = true; };
+  }, [output.blob, format]);
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
-      <div className="bg-brand-medium border border-brand-light rounded-xl p-8 max-w-sm w-full text-center">
-        <div className={`inline-flex p-4 rounded-full bg-brand-dark mb-4 ${info.color}`}>
-          <Icon size={32} />
+    <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-auto">
+      <div className="bg-brand-medium border border-brand-light rounded-xl p-6 max-w-lg w-full">
+        {thumbnail ? (
+          <div className="mb-4 rounded-lg overflow-hidden bg-[#1a1a2e] border border-brand-light/30">
+            <img src={thumbnail} alt={`${info.label} preview`} className="w-full h-auto" />
+          </div>
+        ) : (
+          <div className="mb-4 rounded-lg bg-[#1a1a2e] border border-brand-light/30 flex items-center justify-center h-48">
+            {loading ? (
+              <span className="text-xs text-slate-500">Extracting preview...</span>
+            ) : (
+              <div className={`p-4 rounded-full bg-brand-dark ${info.color}`}>
+                <Icon size={32} />
+              </div>
+            )}
+          </div>
+        )}
+        <div className="flex items-center gap-2 mb-2">
+          <Icon size={16} className={info.color} />
+          <h3 className="text-sm font-semibold text-white">{info.label} File</h3>
         </div>
-        <h3 className="text-lg font-semibold text-white mb-1">{info.label} File</h3>
-        <p className="text-sm text-slate-400 mb-4">{info.description}</p>
-        <div className="space-y-2 text-left bg-brand-dark rounded-lg p-3 mb-4">
+        <div className="space-y-1.5 text-left bg-brand-dark rounded-lg p-3 mb-3">
           <div className="flex justify-between text-xs">
             <span className="text-slate-500">Filename</span>
-            <span className="text-slate-300 font-mono">{output.filename}</span>
+            <span className="text-slate-300 font-mono truncate ml-2">{output.filename}</span>
           </div>
           <div className="flex justify-between text-xs">
             <span className="text-slate-500">Size</span>
@@ -189,18 +236,11 @@ function MetaViewer({ output, format }: { output: OutputFile; format: string }) 
             <span className="text-slate-500">Format</span>
             <span className="text-slate-300 font-mono">{format.toUpperCase()}</span>
           </div>
-          <div className="flex justify-between text-xs">
-            <span className="text-slate-500">Created</span>
-            <span className="text-slate-300 font-mono">
-              {new Date(output.timestamp).toLocaleTimeString()}
-            </span>
-          </div>
         </div>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-slate-500 text-center">
           {format === "figma" && "Open in Figma, Penpot, or compatible design tools."}
           {format === "psd" && "Open in Photoshop, GIMP, Photopea, or Affinity Photo."}
           {format === "xd" && "Open in Sketch, Figma, Penpot, Adobe XD, or compatible editors."}
-          {!["figma", "psd", "xd"].includes(format) && "Open this file in a compatible application to edit."}
         </p>
       </div>
     </div>
@@ -244,7 +284,7 @@ export default function OutputViewer({ output, onClose, onReExport, onCompare }:
       case "figma":
       case "psd":
       case "xd":
-        return <MetaViewer output={output} format={format} />;
+        return <DesignFileViewer output={output} format={format} />;
       default:
         return <ImageViewer url={output.url} format={format} />;
     }
