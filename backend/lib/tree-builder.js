@@ -3,28 +3,20 @@ function hasZeroArea(el) {
 }
 
 function contains(outer, inner) {
-  if (hasZeroArea(outer) || hasZeroArea(inner)) return false;
-  if (outer.x <= inner.x && outer.y <= inner.y &&
-      outer.x + outer.w >= inner.x + inner.w &&
-      outer.y + outer.h >= inner.y + inner.h) {
-    return true;
-  }
-  var innerCx = inner.x + inner.w / 2;
-  var innerCy = inner.y + inner.h / 2;
-  if (innerCx >= outer.x && innerCx <= outer.x + outer.w &&
-      innerCy >= outer.y && innerCy <= outer.y + outer.h) {
-    var ox = Math.max(outer.x, inner.x);
-    var oy = Math.max(outer.y, inner.y);
-    var ow = Math.min(outer.x + outer.w, inner.x + inner.w) - ox;
-    var oh = Math.min(outer.y + outer.h, inner.y + inner.h) - oy;
-    if (ow > 0 && oh > 0) {
-      var overlap = ow * oh;
-      var innerArea = inner.w * inner.h;
-      if (overlap / innerArea > 0.15) return true;
-    }
-    return true;
-  }
-  return false;
+  var outerArea = outer.w * outer.h;
+  var innerArea = inner.w * inner.h;
+  if (outerArea === 0 || innerArea === 0) return false;
+
+  var centerX = inner.x + inner.w / 2;
+  var centerY = inner.y + inner.h / 2;
+  var centerInside = centerX >= outer.x && centerX <= outer.x + outer.w &&
+                     centerY >= outer.y && centerY <= outer.y + outer.h;
+
+  var overlapX = Math.max(0, Math.min(outer.x + outer.w, inner.x + inner.w) - Math.max(outer.x, inner.x));
+  var overlapY = Math.max(0, Math.min(outer.y + outer.h, inner.y + inner.h) - Math.max(outer.y, inner.y));
+  var overlapArea = overlapX * overlapY;
+
+  return centerInside || (overlapArea / innerArea > 0.10);
 }
 
 function area(el) {

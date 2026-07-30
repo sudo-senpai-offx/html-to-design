@@ -557,8 +557,14 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
     graph.createNode("TEXT", nodeId || parentId, textOverrides);
   }
 
-  for (var i = 0; i < treeNode.children.length; i++) {
-    await convertNode(treeNode.children[i], nodeId || parentId, el, i, assetManager, graph, ctx, useAutoLayout);
+  var sortedChildren = treeNode.children.slice();
+  sortedChildren.sort(function(a, b) {
+    var za = parseInt((a.element && a.element.props && a.element.props["z-index"]) || 0);
+    var zb = parseInt((b.element && b.element.props && b.element.props["z-index"]) || 0);
+    return za - zb;
+  });
+  for (var i = 0; i < sortedChildren.length; i++) {
+    await convertNode(sortedChildren[i], nodeId || parentId, el, i, assetManager, graph, ctx, useAutoLayout);
   }
 }
 
@@ -621,4 +627,4 @@ async function buildDocument(tree, pageWidth, pageHeight, pageName, assetManager
   return graph;
 }
 
-module.exports = { buildDocument };
+module.exports = { buildDocument, normalizeCoordinates };

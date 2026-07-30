@@ -1,29 +1,25 @@
-function shouldEnableAutoLayout(children, mode) {
-  if (!children || children.length < 2) return true;
-  var primaryAxis = mode === "HORIZONTAL" ? "w" : "h";
-  var counterAxis = mode === "HORIZONTAL" ? "h" : "w";
-  var primarySizes = [];
-  var counterSizes = [];
+function shouldEnableAutoLayout(children) {
+  if (!children || children.length < 2) return false;
+
+  var widths = [];
+  var heights = [];
   for (var i = 0; i < children.length; i++) {
     var el = children[i].element || children[i];
     if (!el) continue;
-    primarySizes.push(el[primaryAxis] || 0);
-    counterSizes.push(el[counterAxis] || 0);
+    widths.push(el.w || 0);
+    heights.push(el.h || 0);
   }
-  if (primarySizes.length < 2) return true;
+  if (widths.length < 2) return false;
 
-  function varianceCoeff(values) {
-    var sum = 0, n = values.length;
-    for (var i = 0; i < n; i++) sum += values[i];
-    var mean = sum / n;
-    var sqSum = 0;
-    for (var i = 0; i < n; i++) sqSum += (values[i] - mean) * (values[i] - mean);
-    var stdDev = Math.sqrt(sqSum / n);
-    return mean > 0 ? stdDev / mean : 0;
+  var avgWidth = widths.reduce(function(a, b) { return a + b; }, 0) / widths.length;
+  var avgHeight = heights.reduce(function(a, b) { return a + b; }, 0) / heights.length;
+
+  var widthVariance = widths.reduce(function(a, b) { return a + Math.pow(b - avgWidth, 2); }, 0) / widths.length;
+  var heightVariance = heights.reduce(function(a, b) { return a + Math.pow(b - avgHeight, 2); }, 0) / heights.length;
+
+  if (widthVariance / (avgWidth + 1) > 0.3 || heightVariance / (avgHeight + 1) > 0.3) {
+    return false;
   }
-
-  var counterCV = varianceCoeff(counterSizes);
-  if (counterCV > 0.5) return false;
   return true;
 }
 
