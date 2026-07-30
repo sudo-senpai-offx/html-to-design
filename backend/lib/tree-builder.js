@@ -20,8 +20,9 @@ function contains(outer, inner) {
     if (ow > 0 && oh > 0) {
       var overlap = ow * oh;
       var innerArea = inner.w * inner.h;
-      if (overlap / innerArea > 0.4) return true;
+      if (overlap / innerArea > 0.15) return true;
     }
+    return true;
   }
   return false;
 }

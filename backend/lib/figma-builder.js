@@ -14,7 +14,18 @@ var {
   parseColor, computeSHA1, readableName,
 } = require("./utils");
 var { extractStyles } = require("./style-extractor");
-var { detectAutoLayout } = require("./layout");
+var { detectAutoLayout, shouldEnableAutoLayout } = require("./layout");
+
+function normalizeCoordinates(vpX, vpY, parentElement, parentAutoLayout, props) {
+  var relX = parentElement ? vpX - parentElement.x : 0;
+  var relY = parentElement ? vpY - parentElement.y : 0;
+  var isAbsolute = props && (props["position"] === "absolute" || props["position"] === "fixed");
+  if (isAbsolute && parentAutoLayout) {
+    relX = Math.round(vpX - (parentElement ? parentElement.x : 0));
+    relY = Math.round(vpY - (parentElement ? parentElement.y : 0));
+  }
+  return { x: relX, y: relY };
+}
 
 function mapTextDecoration(td) {
   if (!td) return undefined;
@@ -216,8 +227,9 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
 
   if (w < 2 || h < 2) return;
 
-  var relX = parentElement ? vpX - parentElement.x : 0;
-  var relY = parentElement ? vpY - parentElement.y : 0;
+  var coords = normalizeCoordinates(vpX, vpY, parentElement, parentAutoLayout, props);
+  var relX = coords.x;
+  var relY = coords.y;
 
   var isContainer = !isSvg && !isImage && (childCount > 0 || hasText);
 
@@ -241,7 +253,12 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
         },
       };
 
-      var verified = verifyAutoLayout(treeNode.children, layout, w, h);
+      var sizeOk = shouldEnableAutoLayout(treeNode.children, layout.mode);
+      if (!sizeOk && _debugEnabled && _debugNodeCount <= 5) {
+        console.log("    [AL #" + _debugNodeCount + "] " + name.substring(0, 25) + " FAILED SIZE VARIANCE -> absolute");
+      }
+
+      var verified = sizeOk && verifyAutoLayout(treeNode.children, layout, w, h);
       if (verified) {
         useAutoLayout = true;
         if (_debugEnabled && _debugNodeCount <= 5) {
@@ -266,12 +283,6 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
     _debugNodeCount++;
     if (_debugEnabled && _debugNodeCount <= 3) {
       console.log("    [NODE #" + _debugNodeCount + "] " + name.substring(0, 30) + " vp=(" + Math.round(vpX) + "," + Math.round(vpY) + "," + Math.round(w) + "," + Math.round(h) + ")");
-    }
-
-    var isAbsolute = props["position"] === "absolute" || props["position"] === "fixed";
-    if (isAbsolute && parentAutoLayout) {
-      relX = Math.round(vpX - (parentElement ? parentElement.x : 0));
-      relY = Math.round(vpY - (parentElement ? parentElement.y : 0));
     }
 
     var overrides = {
@@ -595,8 +606,15 @@ async function buildDocument(tree, pageWidth, pageHeight, pageName, assetManager
 
   var ctx = { pendingImages: [] };
 
-  for (var i = 0; i < tree.children.length; i++) {
-    await convertNode(tree.children[i], rootFrame.id, tree.element, i, assetManager, graph, ctx, false);
+  var sortedChildren = tree.children.slice();
+  sortedChildren.sort(function(a, b) {
+    var za = parseInt((a.element && a.element.props && a.element.props["z-index"]) || 0);
+    var zb = parseInt((b.element && b.element.props && b.element.props["z-index"]) || 0);
+    return za - zb;
+  });
+
+  for (var i = 0; i < sortedChildren.length; i++) {
+    await convertNode(sortedChildren[i], rootFrame.id, tree.element, i, assetManager, graph, ctx, false);
   }
   injectPendingImages(ctx.pendingImages, assetManager, rasterizedSvgs, graph);
 

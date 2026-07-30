@@ -40,18 +40,27 @@ class AssetManager {
       return result;
     }
 
-    try {
-      var buf = await this.fetchUrl(url);
-      fs.writeFileSync(cachePath, buf);
-      var hash = computeSHA1(buf);
-      var hashBytes = computeSHA1Bytes(buf);
-      var result = { hash: hash, hashBytes: hashBytes, buffer: buf };
-      this.cache.set(url, result);
-      return result;
-    } catch (e) {
-      console.error("  WARN: Failed to download:", url, e.message);
-      return null;
+    var lastErr = null;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        var buf = await this.fetchUrl(url);
+        fs.writeFileSync(cachePath, buf);
+        var hash = computeSHA1(buf);
+        var hashBytes = computeSHA1Bytes(buf);
+        var result = { hash: hash, hashBytes: hashBytes, buffer: buf };
+        this.cache.set(url, result);
+        return result;
+      } catch (e) {
+        lastErr = e;
+        if (attempt < 2) {
+          var delay = Math.pow(2, attempt) * 1000;
+          console.error("  WARN: Retry " + (attempt + 1) + "/3 for " + url + " after " + delay + "ms: " + e.message);
+          await new Promise(function(r) { setTimeout(r, delay); });
+        }
+      }
     }
+    console.error("  WARN: Failed to download after 3 retries:", url, lastErr.message);
+    return null;
   }
 
   fetchUrl(url, redirectCount) {

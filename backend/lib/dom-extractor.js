@@ -261,7 +261,14 @@ async function extractFullDOM(htmlFilePath, options) {
       : "file:///" + path.resolve(htmlFilePath).replace(/\\/g, "/");
     await page.setViewport({ width: width, height: 900, deviceScaleFactor: scale });
     await page.goto(fileUrl, { waitUntil: "networkidle0", timeout: 30000 });
-    await page.evaluate(function() { return document.fonts && document.fonts.ready; });
+    await page.evaluate(async function() {
+      if (document.fonts) {
+        await Promise.race([
+          document.fonts.ready,
+          new Promise(function(r) { setTimeout(r, 3000); }),
+        ]);
+      }
+    });
     /* Inject externally-provided CSS if any, ensuring authored styles are applied */
     if (cssContent) {
       await page.addStyleTag({ content: cssContent });

@@ -1,3 +1,32 @@
+function shouldEnableAutoLayout(children, mode) {
+  if (!children || children.length < 2) return true;
+  var primaryAxis = mode === "HORIZONTAL" ? "w" : "h";
+  var counterAxis = mode === "HORIZONTAL" ? "h" : "w";
+  var primarySizes = [];
+  var counterSizes = [];
+  for (var i = 0; i < children.length; i++) {
+    var el = children[i].element || children[i];
+    if (!el) continue;
+    primarySizes.push(el[primaryAxis] || 0);
+    counterSizes.push(el[counterAxis] || 0);
+  }
+  if (primarySizes.length < 2) return true;
+
+  function varianceCoeff(values) {
+    var sum = 0, n = values.length;
+    for (var i = 0; i < n; i++) sum += values[i];
+    var mean = sum / n;
+    var sqSum = 0;
+    for (var i = 0; i < n; i++) sqSum += (values[i] - mean) * (values[i] - mean);
+    var stdDev = Math.sqrt(sqSum / n);
+    return mean > 0 ? stdDev / mean : 0;
+  }
+
+  var counterCV = varianceCoeff(counterSizes);
+  if (counterCV > 0.5) return false;
+  return true;
+}
+
 function detectAutoLayout(el, childCount) {
   var props = el.props || {};
   var display = props["display"] || "block";
@@ -154,4 +183,4 @@ function detectAutoLayout(el, childCount) {
   };
 }
 
-module.exports = { detectAutoLayout };
+module.exports = { detectAutoLayout, shouldEnableAutoLayout };

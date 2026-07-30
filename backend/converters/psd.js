@@ -46,6 +46,7 @@ function collectLayers(el, offsetX, offsetY, depth, layers) {
       x: Math.round(x), y: Math.round(y),
       w: Math.round(w), h: Math.round(h),
       depth: depth,
+      zIndex: parseInt(props["z-index"]) || 0,
       bgColor: hasBg ? bgColor : null,
       textColor: hasText ? (props["color"] || "#000") : null,
       text: hasText ? el.text : null,
@@ -249,6 +250,7 @@ async function convertToPsd(html, options) {
   }
 
   var selectorLayers = layers.filter(function(l) { return l.selector && l.selector.length > 0; }).slice(0, 50);
+  selectorLayers.sort(function(a, b) { return a.zIndex - b.zIndex; });
 
   var elementRenderings = [];
   if (selectorLayers.length > 0) {
