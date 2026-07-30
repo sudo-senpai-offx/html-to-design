@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image, FileText, PenTool, Figma, Layers, Monitor, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Image, FileText, PenTool, Layers, Monitor, FileCode, Sparkles, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface Props {
   onExport: (format: string, options?: Record<string, unknown>) => void;
@@ -10,7 +10,8 @@ const formats = [
   { id: 'png', label: 'PNG', icon: Image, desc: 'Raster image', color: 'text-blue-400' },
   { id: 'pdf', label: 'PDF', icon: FileText, desc: 'Print-ready', color: 'text-red-400', hasOptions: true },
   { id: 'svg', label: 'SVG', icon: PenTool, desc: 'Vector graphic', color: 'text-green-400' },
-  { id: 'figma', label: 'Figma', icon: Figma, desc: '.fig native layers', color: 'text-purple-400' },
+  { id: 'figma-all', label: 'Figma All-in-One', icon: Sparkles, desc: '.fig + paste + connector HTML', color: 'text-violet-400' },
+  { id: 'inline', label: 'Inline HTML', icon: FileCode, desc: 'Single HTML, styles inlined', color: 'text-teal-400' },
   { id: 'psd', label: 'PSD', icon: Layers, desc: 'Photoshop layers', color: 'text-cyan-400' },
   { id: 'xd', label: 'XD / Sketch', icon: Monitor, desc: 'Multi-editor compatible', color: 'text-orange-400' },
 ];

@@ -1,16 +1,16 @@
-const path = require("path");
 const fs = require("fs-extra");
 const { extractFullDOM } = require("../lib/dom-extractor");
 const { buildTree } = require("../lib/tree-builder");
 const { buildDocument } = require("../lib/figma-builder");
 const { writeFigBuffer } = require("../lib/fig-writer");
 const { AssetManager } = require("../lib/asset-manager");
+const { getTempPath, ensureTempDir, removeTempFile } = require("../lib/temp-dir");
 
 async function convertToFigma(html, options) {
   const { width = 1440, height = 900, scale = 2, jobId } = options;
 
-  const tempHtmlPath = path.join(__dirname, "../temp", `${jobId || "temp"}.html`);
-  await fs.ensureDir(path.dirname(tempHtmlPath));
+  await ensureTempDir();
+  const tempHtmlPath = getTempPath(`${jobId || "temp"}.html`);
   await fs.writeFile(tempHtmlPath, html, "utf-8");
 
   try {
@@ -18,6 +18,7 @@ async function convertToFigma(html, options) {
     const { flatElements, pageWidth, pageHeight, rasterizedSvgs } = await extractFullDOM(tempHtmlPath, {
       width,
       scale,
+      css: (options && options.css) || "",
     });
 
     if (!flatElements || flatElements.length === 0) {
@@ -46,7 +47,7 @@ async function convertToFigma(html, options) {
     console.log(`  .fig file: ${(figBuffer.length / 1024).toFixed(1)}KB`);
     return figBuffer;
   } finally {
-    await fs.remove(tempHtmlPath).catch(() => {});
+    await removeTempFile(`${jobId || "temp"}.html`);
   }
 }
 

@@ -25,6 +25,8 @@ function mapTextDecoration(td) {
 
 var DEFAULT_COLOR = { r: 0, g: 0, b: 0, a: 1 };
 var _debugNodeCount = 0;
+var _debugEnabled = false;
+var GEOMETRY_TOLERANCE = 3.0;
 
 function safeFill(fill) {
   if (!fill.color) fill.color = DEFAULT_COLOR;
@@ -49,7 +51,112 @@ function resolveNodeStyle(nodeType, props, w, h) {
   return "FRAME";
 }
 
-async function convertNode(treeNode, parentId, parentElement, childIndex, assetManager, graph, ctx) {
+function verifyAutoLayout(children, layoutInfo, containerW, containerH) {
+  if (!layoutInfo || layoutInfo.mode === "NONE") return false;
+  if (!children || children.length < 2) return false;
+
+  var mode = layoutInfo.mode;
+  var spacing = layoutInfo.spacing;
+  var padding = layoutInfo.padding;
+  var justify = layoutInfo.justify;
+  var align = layoutInfo.align;
+  var wrap = layoutInfo.wrap;
+
+  var paddingStart = (mode === "HORIZONTAL") ? padding.left : padding.top;
+  var paddingEnd = (mode === "HORIZONTAL") ? padding.right : padding.bottom;
+  var paddingCounterStart = (mode === "HORIZONTAL") ? padding.top : padding.left;
+  var paddingCounterEnd = (mode === "HORIZONTAL") ? padding.bottom : padding.right;
+
+  var primarySize = (mode === "HORIZONTAL") ? containerW : containerH;
+  var counterSize = (mode === "HORIZONTAL") ? containerH : containerW;
+  var availablePrimary = primarySize - paddingStart - paddingEnd;
+
+  var totalChildPrimary = 0;
+  var maxChildCounter = 0;
+  for (var i = 0; i < children.length; i++) {
+    var c = children[i].element;
+    if (!c) continue;
+    var cPrimary = (mode === "HORIZONTAL") ? c.w : c.h;
+    var cCounter = (mode === "HORIZONTAL") ? c.h : c.w;
+    totalChildPrimary += cPrimary;
+    if (cCounter > maxChildCounter) maxChildCounter = cCounter;
+  }
+
+  var totalWithSpacing = totalChildPrimary + spacing * (children.length - 1);
+  var numRows = 1;
+  if (wrap && availablePrimary > 0) {
+    var rowAccum = 0;
+    for (var ri = 0; ri < children.length; ri++) {
+      var rc = children[ri].element;
+      if (!rc) continue;
+      var rcp = (mode === "HORIZONTAL") ? rc.w : rc.h;
+      if (rowAccum + rcp > availablePrimary && rowAccum > 0) { numRows++; rowAccum = rcp; }
+      else { rowAccum += rcp + spacing; }
+    }
+    totalWithSpacing = totalChildPrimary + spacing * (children.length - numRows);
+  }
+
+  var primaryGrowthRatio = totalWithSpacing / Math.max(availablePrimary, 1);
+  var fillsSpace = Math.abs(primaryGrowthRatio - 1) < 0.15;
+
+  var startX = paddingStart;
+  if (justify === "CENTER") {
+    startX = paddingStart + (availablePrimary - totalWithSpacing) / 2;
+  } else if (justify === "MAX") {
+    startX = paddingStart + availablePrimary - totalWithSpacing;
+  } else if (justify === "SPACE_BETWEEN" && children.length > 1) {
+    startX = paddingStart;
+  }
+
+  var verifiedCount = 0;
+  var currentPrimary = startX;
+  var currentRowStartPrimary = startX;
+  var rowItems = [];
+
+  for (var i = 0; i < children.length; i++) {
+    var c = children[i].element;
+    if (!c) continue;
+    var cPrimary = (mode === "HORIZONTAL") ? c.w : c.h;
+    var cCounter = (mode === "HORIZONTAL") ? c.h : c.w;
+
+    if (wrap && availablePrimary > 0 && (currentPrimary + cPrimary > paddingStart + availablePrimary) && rowItems.length > 0) {
+      currentPrimary = paddingStart;
+      currentRowStartPrimary = paddingStart;
+      rowItems = [];
+    }
+
+    var expectedPrimary = currentPrimary;
+    var expectedCounter = paddingCounterStart;
+
+    if (justify === "SPACE_BETWEEN" && rowItems.length > 0 && !wrap) {
+      var gap = (availablePrimary - totalChildPrimary) / (children.length - 1);
+      expectedPrimary = currentRowStartPrimary + gap * rowItems.length;
+      currentPrimary = expectedPrimary;
+    }
+
+    var expectedX, expectedY;
+    if (mode === "HORIZONTAL") { expectedX = expectedPrimary; expectedY = expectedCounter; }
+    else { expectedX = expectedCounter; expectedY = expectedPrimary; }
+
+    var actualPrimary = (mode === "HORIZONTAL") ? c.x : c.y;
+    var actualCounter = (mode === "HORIZONTAL") ? c.y : c.x;
+
+    var primaryErr = Math.abs(actualPrimary - expectedPrimary);
+    var counterErr = Math.abs(actualCounter - expectedCounter);
+
+    if (primaryErr < GEOMETRY_TOLERANCE && counterErr < GEOMETRY_TOLERANCE * 2) {
+      verifiedCount++;
+    }
+
+    currentPrimary += cPrimary + spacing;
+    rowItems.push(c);
+  }
+
+  var verificationRate = children.length > 0 ? verifiedCount / children.length : 0;
+  return verificationRate > 0.7;
+}
+
+async function convertNode(treeNode, parentId, parentElement, childIndex, assetManager, graph, ctx, parentAutoLayout) {
   if (!treeNode || !treeNode.element) return;
   var el = treeNode.element;
   var tag = el.tag;
@@ -60,6 +167,8 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
   var display = props["display"] || "block";
   var visibility = props["visibility"] || "visible";
   var opacityVal = parseFloat(props["opacity"]);
+
+  if (el.isVisible === false) return;
   if (display === "none" || visibility === "hidden") return;
   if (!isNaN(opacityVal) && opacityVal < 0.01) return;
 
@@ -80,6 +189,23 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
     if (svgFill) fill = [{ type: "SOLID", color: svgFill, opacity: parseFloat(el.attrs.opacity) || 1, visible: true, blendMode: "NORMAL" }];
   }
 
+  var blendMode = "NORMAL";
+  var mb = props["mix-blend-mode"] || "normal";
+  var blendMap = { "multiply": "MULTIPLY", "screen": "SCREEN", "overlay": "OVERLAY", "darken": "DARKEN", "lighten": "LIGHTEN", "color-dodge": "COLOR_DODGE", "color-burn": "COLOR_BURN", "hard-light": "HARD_LIGHT", "soft-light": "SOFT_LIGHT", "difference": "DIFFERENCE", "exclusion": "EXCLUSION", "hue": "HUE", "saturation": "SATURATION", "color": "COLOR", "luminosity": "LUMINOSITY" };
+  if (blendMap[mb]) blendMode = blendMap[mb];
+
+  var aspectRatio = props["aspect-ratio"];
+  if (aspectRatio && aspectRatio !== "auto") {
+    var arParts = aspectRatio.split("/");
+    if (arParts.length === 2) {
+      var ar = parseFloat(arParts[0]) / Math.max(parseFloat(arParts[1]), 0.01);
+      if (ar > 0 && (w <= 0 || h <= 0)) {
+        if (w > 0) h = Math.round(w / ar);
+        else if (h > 0) w = Math.round(h * ar);
+      }
+    }
+  }
+
   var name = readableName(tag, cls, hasText ? el.text : "");
   if (isPseudo) name = (tag === "pseudo-before" ? "::before " : "::after ") + (el.text || "").substring(0, 20);
   if (cls) name = cls.split(/\s+/)[0].replace(/^[.#]/, "") + " [" + tag + "]";
@@ -93,10 +219,43 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
   var relX = parentElement ? vpX - parentElement.x : 0;
   var relY = parentElement ? vpY - parentElement.y : 0;
 
-  var useAutoLayout = false;
-  var layout = { stackMode: "NONE", stackSpacing: 0, stackJustify: "MIN", stackCounterAlign: "MIN", stackWrapEnabled: false, stackPaddingTop: 0, stackPaddingRight: 0, stackPaddingBottom: 0, stackPaddingLeft: 0, stackPrimarySizing: "FIXED", stackCounterSizing: "FIXED" };
-
   var isContainer = !isSvg && !isImage && (childCount > 0 || hasText);
+
+  var useAutoLayout = false;
+  var layout = { mode: "NONE", spacing: 0, justify: "MIN", align: "MIN", wrap: false, padding: { top: 0, right: 0, bottom: 0, left: 0 } };
+
+  if (isContainer && childCount >= 2 && !isSvg) {
+    var detected = detectAutoLayout(el, childCount);
+    if (detected && detected.isAutoLayout) {
+      layout = {
+        mode: detected.stackMode,
+        spacing: detected.stackSpacing,
+        justify: detected.stackJustify,
+        align: detected.stackCounterAlign,
+        wrap: detected.stackWrapEnabled,
+        padding: {
+          top: detected.stackPaddingTop,
+          right: detected.stackPaddingRight,
+          bottom: detected.stackPaddingBottom,
+          left: detected.stackPaddingLeft,
+        },
+      };
+
+      var verified = verifyAutoLayout(treeNode.children, layout, w, h);
+      if (verified) {
+        useAutoLayout = true;
+        if (_debugEnabled && _debugNodeCount <= 5) {
+          console.log("    [AL #" + _debugNodeCount + "] " + name.substring(0, 25) + " mode=" + layout.mode + " spacing=" + layout.spacing + " justify=" + layout.justify + " align=" + layout.align + " VERIFIED");
+        }
+      } else {
+        if (_debugEnabled && _debugNodeCount <= 5) {
+          console.log("    [AL #" + _debugNodeCount + "] " + name.substring(0, 25) + " mode=" + layout.mode + " FAILED VERIFICATION -> absolute");
+        }
+        layout = { mode: "NONE", spacing: 0, justify: "MIN", align: "MIN", wrap: false, padding: { top: 0, right: 0, bottom: 0, left: 0 } };
+      }
+    }
+  }
+
   var nodeType = "RECTANGLE";
   if (tag === "circle" || tag === "ellipse") nodeType = "ELLIPSE";
   if (isContainer) nodeType = "FRAME";
@@ -105,9 +264,16 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
 
   if (w > 0 && h > 0) {
     _debugNodeCount++;
-    if (_debugNodeCount <= 15) {
-      console.log("    [COORD #" + _debugNodeCount + "] " + name.substring(0, 30) + " vp=(" + Math.round(vpX) + "," + Math.round(vpY) + "," + Math.round(w) + "," + Math.round(h) + ") parentVP=(" + (parentElement ? Math.round(parentElement.x) + "," + Math.round(parentElement.y) : "null") + ") rel=(" + Math.round(relX) + "," + Math.round(relY) + ")");
+    if (_debugEnabled && _debugNodeCount <= 3) {
+      console.log("    [NODE #" + _debugNodeCount + "] " + name.substring(0, 30) + " vp=(" + Math.round(vpX) + "," + Math.round(vpY) + "," + Math.round(w) + "," + Math.round(h) + ")");
     }
+
+    var isAbsolute = props["position"] === "absolute" || props["position"] === "fixed";
+    if (isAbsolute && parentAutoLayout) {
+      relX = Math.round(vpX - (parentElement ? parentElement.x : 0));
+      relY = Math.round(vpY - (parentElement ? parentElement.y : 0));
+    }
+
     var overrides = {
       name: name,
       x: Math.round(relX),
@@ -118,6 +284,7 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
       fills: fill,
       clipsContent: clipsContent,
       cornerRadius: isSvg ? 0 : s.radius,
+      blendMode: blendMode,
     };
 
     if (s.stroke.weight > 0) {
@@ -143,17 +310,30 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
     }
 
     if (nodeType === "FRAME" && useAutoLayout) {
-      overrides.layoutMode = layout.stackMode;
-      overrides.itemSpacing = layout.stackSpacing;
-      overrides.primaryAxisAlign = layout.stackJustify;
-      overrides.counterAxisAlign = layout.stackCounterAlign;
-      if (layout.stackWrapEnabled) overrides.layoutWrap = "WRAP";
-      overrides.paddingTop = layout.stackPaddingTop;
-      overrides.paddingRight = layout.stackPaddingRight;
-      overrides.paddingBottom = layout.stackPaddingBottom;
-      overrides.paddingLeft = layout.stackPaddingLeft;
-      overrides.primaryAxisSizing = layout.stackPrimarySizing;
-      overrides.counterAxisSizing = layout.stackCounterSizing;
+      overrides.layoutMode = layout.mode;
+      overrides.itemSpacing = layout.spacing;
+      overrides.primaryAxisAlign = layout.justify;
+      overrides.counterAxisAlign = layout.align;
+      if (layout.wrap) overrides.layoutWrap = "WRAP";
+      overrides.paddingTop = layout.padding.top;
+      overrides.paddingRight = layout.padding.right;
+      overrides.paddingBottom = layout.padding.bottom;
+      overrides.paddingLeft = layout.padding.left;
+      overrides.primaryAxisSizing = "FIXED";
+      overrides.counterAxisSizing = "FIXED";
+
+      if (layout.gridInfo && layout.gridInfo.colCount > 1) {
+        overrides.layoutGrids = [{
+          pattern: "COLUMNS",
+          sectionSize: Math.max(Math.round(w / layout.gridInfo.colCount), 1),
+          visible: false,
+          color: { r: 0, g: 0, b: 1, a: 0.05 },
+        }];
+      }
+
+      if (_debugEnabled && _debugNodeCount <= 5) {
+        console.log("    [APPLY #" + _debugNodeCount + "] " + name.substring(0, 25) + " layout=" + layout.mode + " grid=" + (layout.gridInfo ? layout.gridInfo.colCount + "c" : "none") + " children=" + treeNode.children.length);
+      }
     }
 
     var node = graph.createNode(nodeType, parentId, overrides);
@@ -247,7 +427,7 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
         align: s.textProps ? s.textProps.align : "LEFT",
       };
       var inputX = 16, inputY = 14;
-      if (parentAutoLayout && !nodeId) { inputX = 0; inputY = 0; }
+      if (parentAutoLayout) { inputX = 0; inputY = 0; }
       graph.createNode("TEXT", nodeId || parentId, {
         name: ("Input: " + displayVal).substring(0, 50),
         x: inputX, y: inputY,
@@ -267,6 +447,7 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
   if (isButton && hasText && w > 0 && h > 0) {
     var btnX = 0, btnY = 0;
     if (!nodeId && !parentAutoLayout) { btnX = relX; btnY = relY; }
+    else if (!nodeId && parentAutoLayout) { btnX = 4; btnY = 4; }
     graph.createNode("TEXT", nodeId || parentId, {
       name: el.text.substring(0, 50),
       x: btnX, y: btnY,
@@ -323,6 +504,11 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
     if (!nodeId && !parentAutoLayout) {
       textX = relX;
       textY = relY;
+    } else if (!nodeId && parentAutoLayout) {
+      var padT = parseFloat(props["padding-top"]) || 0;
+      var padL = parseFloat(props["padding-left"]) || 0;
+      textX = padL;
+      textY = padT;
     }
 
     var fontWeightVal = fontWeightNumeric(props["font-weight"] || "400");
@@ -361,7 +547,7 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
   }
 
   for (var i = 0; i < treeNode.children.length; i++) {
-    await convertNode(treeNode.children[i], nodeId || parentId, el, i, assetManager, graph, ctx);
+    await convertNode(treeNode.children[i], nodeId || parentId, el, i, assetManager, graph, ctx, useAutoLayout);
   }
 }
 
@@ -410,7 +596,7 @@ async function buildDocument(tree, pageWidth, pageHeight, pageName, assetManager
   var ctx = { pendingImages: [] };
 
   for (var i = 0; i < tree.children.length; i++) {
-    await convertNode(tree.children[i], rootFrame.id, tree.element, i, assetManager, graph, ctx);
+    await convertNode(tree.children[i], rootFrame.id, tree.element, i, assetManager, graph, ctx, false);
   }
   injectPendingImages(ctx.pendingImages, assetManager, rasterizedSvgs, graph);
 

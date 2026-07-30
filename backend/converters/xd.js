@@ -248,6 +248,8 @@ async function convertToXd(html, options) {
       await new Promise(function(r) { setTimeout(r, 500); });
 
       var domTree = await page.evaluate(function() {
+        var MAX_ELEMENTS = 25000;
+        var elementCount = 0;
         function getCS(el) {
           var cs = window.getComputedStyle(el);
           var props = {};
@@ -270,6 +272,7 @@ async function convertToXd(html, options) {
         }
         function walk(el, depth) {
           if (!el || depth > 50 || el.nodeType !== 1) return null;
+          if (elementCount >= MAX_ELEMENTS) return null;
           var rect = el.getBoundingClientRect();
           if (rect.width < 1 || rect.height < 1) return null;
           var tag = el.tagName.toLowerCase();
@@ -287,6 +290,7 @@ async function convertToXd(html, options) {
             var child = walk(el.children[i], depth + 1);
             if (child) children.push(child);
           }
+          elementCount++;
           return {
             tag: tag, cls: typeof el.className === "string" ? el.className : "",
             text: text, x: Math.round(rect.x), y: Math.round(rect.y),

@@ -1,7 +1,37 @@
 const { getPool } = require("../lib/browser-pool");
 
+function getImageLoadPromise(page) {
+  return page.evaluate(() => {
+    return new Promise((resolve) => {
+      var images = document.querySelectorAll("img");
+      var loaded = 0;
+      var total = images.length;
+      if (total === 0) return resolve();
+      images.forEach((img) => {
+        if (img.complete) {
+          loaded++;
+          if (loaded === total) resolve();
+        } else {
+          img.onload = () => { loaded++; if (loaded === total) resolve(); };
+          img.onerror = () => { loaded++; if (loaded === total) resolve(); };
+        }
+      });
+      setTimeout(resolve, 5000);
+    });
+  });
+}
+
 async function convertToPng(html, options) {
-  var { width = 1440, height = 900, scale = 2 } = options;
+  var {
+    width = 1440,
+    height = 900,
+    scale = 2,
+    fullPage = true,
+    transparent = false,
+    maxHeight = 16384,
+    clipHeight,
+  } = options || {};
+
   var pool = getPool();
 
   return pool.execute(async (page) => {
@@ -10,40 +40,44 @@ async function convertToPng(html, options) {
     await page.evaluate(() => document.fonts && document.fonts.ready);
     await new Promise((r) => setTimeout(r, 500));
 
-    await page.evaluate(() => {
-      return new Promise((resolve) => {
-        const images = document.querySelectorAll("img");
-        let loaded = 0;
-        const total = images.length;
-        if (total === 0) return resolve();
-        images.forEach((img) => {
-          if (img.complete) {
-            loaded++;
-            if (loaded === total) resolve();
-          } else {
-            img.onload = () => {
-              loaded++;
-              if (loaded === total) resolve();
-            };
-            img.onerror = () => {
-              loaded++;
-              if (loaded === total) resolve();
-            };
-          }
-        });
-        setTimeout(resolve, 3000);
+    if (!transparent) {
+      await page.evaluate(() => {
+        document.body.style.backgroundColor = "#ffffff";
       });
-    });
+    }
 
-    const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-    const viewportHeight = await page.evaluate(() => window.innerHeight);
-    const fullHeight = Math.max(scrollHeight, viewportHeight, height);
+    await getImageLoadPromise(page);
+
+    var scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+    var viewportHeight = await page.evaluate(() => window.innerHeight);
+
+    var fullH = Math.max(scrollHeight, viewportHeight, height);
+    if (fullH > maxHeight) {
+      fullH = maxHeight;
+    }
+
+    if (fullPage && !clipHeight) {
+      return page.screenshot({
+        type: "png",
+        fullPage: true,
+        omitBackground: transparent,
+        clip: { x: 0, y: 0, width: width, height: Math.min(fullH, maxHeight) },
+      });
+    }
+
+    if (clipHeight) {
+      return page.screenshot({
+        type: "png",
+        fullPage: false,
+        omitBackground: transparent,
+        clip: { x: 0, y: 0, width: width, height: Math.min(clipHeight, maxHeight) },
+      });
+    }
 
     return page.screenshot({
       type: "png",
-      fullPage: true,
-      omitBackground: false,
-      clip: { x: 0, y: 0, width: width, height: Math.min(fullHeight, 16384) },
+      fullPage: false,
+      omitBackground: transparent,
     });
   }, { timeout: 60000, retries: 3 });
 }

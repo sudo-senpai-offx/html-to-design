@@ -9,59 +9,11 @@ var EXTRACT_SCRIPT = `
   function getCS(el, pseudo) {
     var cs = window.getComputedStyle(el, pseudo || null);
     var props = {};
-    var important = [
-      "display","visibility","opacity","position","z-index",
-      "top","right","bottom","left","inset",
-      "background-color","background","background-image",
-      "background-size","background-position","background-repeat","background-attachment",
-      "color","font-family","font-size","font-weight","font-style",
-      "line-height","letter-spacing","text-align","text-decoration",
-      "text-transform","text-overflow","white-space","word-wrap","word-break",
-      "text-indent","vertical-align",
-      "content",
-      "padding-top","padding-right","padding-bottom","padding-left",
-      "margin-top","margin-right","margin-bottom","margin-left",
-      "border-top-width","border-right-width","border-bottom-width","border-left-width",
-      "border-top-color","border-right-color","border-bottom-color","border-left-color",
-      "border-top-style","border-right-style","border-bottom-style","border-left-style",
-      "border-top-left-radius","border-top-right-radius",
-      "border-bottom-right-radius","border-bottom-left-radius",
-      "border-width","border-color","border-style","border-radius",
-      "box-shadow","gap","flex-direction","flex-wrap","flex",
-      "flex-basis","flex-grow","flex-shrink",
-      "justify-content","align-items","align-self","align-content",
-      "width","height","min-width","min-height","max-width","max-height",
-      "overflow","cursor","object-fit",
-      "text-shadow","transform","transform-origin",
-      "translate","rotate","scale",
-      "grid-template-columns","grid-template-rows","grid-column-gap","grid-row-gap",
-      "grid-auto-flow","grid-auto-columns","grid-auto-rows",
-      "grid-column-start","grid-column-end","grid-row-start","grid-row-end",
-      "aspect-ratio",
-      "outline-width","outline-color","outline-style","outline-offset",
-      "filter","backdrop-filter",
-      "mix-blend-mode","background-blend-mode",
-      "column-gap","row-gap",
-      "container-type","container-name",
-      "clip-path","shape-outside",
-      "scroll-margin-top","scroll-margin-right","scroll-margin-bottom","scroll-margin-left",
-      "scroll-padding-top","scroll-padding-right","scroll-padding-bottom","scroll-padding-left",
-      "mask-image","mask-size","mask-position","mask-repeat",
-      "-webkit-line-clamp","-webkit-box-orient",
-      "text-shadow",
-      "word-spacing",
-      "list-style-type","list-style-position","list-style-image",
-      "caption-side","border-collapse","border-spacing",
-      "table-layout","empty-cells",
-      "writing-mode","text-orientation",
-      "direction","unicode-bidi",
-      "image-rendering","object-position",
-      "pointer-events","touch-action",
-      "will-change","contain",
-    ];
-    for (var i = 0; i < important.length; i++) {
-      var val = cs.getPropertyValue(important[i]);
-      if (val) props[important[i]] = val;
+    var len = cs.length;
+    for (var i = 0; i < len; i++) {
+      var name = cs[i];
+      var val = cs.getPropertyValue(name);
+      if (val) props[name] = val;
     }
     return props;
   }
@@ -115,6 +67,7 @@ var EXTRACT_SCRIPT = `
         props: props, attrs: {},
         placeholder: "", inputType: "", value: "", src: "", alt: "",
         href: "", dataAttrs: {},
+        isVisible: true,
       };
       flatElements.push(element);
       return element;
@@ -142,26 +95,21 @@ var EXTRACT_SCRIPT = `
   }
 
   var svgRasterList = [];
+  var MAX_ELEMENTS = 25000;
+  var MAX_DEPTH = 80;
 
   function walk(el, depth) {
     try {
-      if (!el || depth > 100 || el.nodeType !== 1) return;
-      var rect = el.getBoundingClientRect();
-      if (rect.width < 0.3 && rect.height < 0.3) return;
+      if (!el || depth > MAX_DEPTH || el.nodeType !== 1) return;
+      if (flatElements.length >= MAX_ELEMENTS) return;
 
       var tag = el.tagName.toLowerCase();
-      var cls = typeof el.className === "string" ? el.className : "";
-      var style = el.getAttribute("style") || "";
-
-      var display = el.style.display || window.getComputedStyle(el).display;
-      if (display === "none") return;
-      var visibility = window.getComputedStyle(el).visibility;
-      if (visibility === "hidden") return;
-      var opacity = parseFloat(window.getComputedStyle(el).opacity);
-      if (!isNaN(opacity) && opacity < 0.01) return;
-
       if (tag === "br") return;
       if (tag === "script" || tag === "style" || tag === "noscript") return;
+
+      var rect = el.getBoundingClientRect();
+      var cls = typeof el.className === "string" ? el.className : "";
+      var style = el.getAttribute("style") || "";
 
       var text = "";
       for (var i = 0; i < el.childNodes.length; i++) {
@@ -235,6 +183,26 @@ var EXTRACT_SCRIPT = `
 
       var figmaName = el.getAttribute("data-figma-name") || "";
 
+      var disp = props["display"] || "block";
+      var vis = props["visibility"] || "visible";
+      var op = parseFloat(props["opacity"]);
+      var isVisible = !(disp === "none" || vis === "hidden" || (!isNaN(op) && op < 0.01));
+
+      var textWidth = 0;
+      var textHeight = 0;
+      if (text && tag !== "br" && tag !== "img" && tag !== "svg") {
+        try {
+          var measurer = el.ownerDocument.createElement("span");
+          measurer.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;font:" + (props["font-weight"] || "400") + " " + (props["font-size"] || "16px") + "/" + (props["line-height"] || "1.4") + " " + (props["font-family"] || "sans-serif") + ";letter-spacing:" + (props["letter-spacing"] || "0") + ";";
+          measurer.textContent = text;
+          el.appendChild(measurer);
+          var mr = measurer.getBoundingClientRect();
+          textWidth = Math.round(mr.width);
+          textHeight = Math.round(mr.height);
+          el.removeChild(measurer);
+        } catch (e) {}
+      }
+
       var element = {
         id: nextId++,
         tag: tag, cls: cls, style: style, text: text,
@@ -248,6 +216,9 @@ var EXTRACT_SCRIPT = `
         href: href, dataAttrs: dataAttrs,
         bgImage: bgImage,
         figmaName: figmaName,
+        isVisible: isVisible,
+        textWidth: textWidth,
+        textHeight: textHeight,
       };
 
       if (svgRasterId >= 0) {
@@ -281,6 +252,7 @@ var EXTRACT_SCRIPT = `
 async function extractFullDOM(htmlFilePath, options) {
   var width = (options && options.width) || 1440;
   var scale = (options && options.scale) || 2;
+  var cssContent = (options && options.css) || "";
   var pool = getPool();
 
   return pool.execute(async (page) => {
@@ -290,9 +262,19 @@ async function extractFullDOM(htmlFilePath, options) {
     await page.setViewport({ width: width, height: 900, deviceScaleFactor: scale });
     await page.goto(fileUrl, { waitUntil: "networkidle0", timeout: 30000 });
     await page.evaluate(function() { return document.fonts && document.fonts.ready; });
+    /* Inject externally-provided CSS if any, ensuring authored styles are applied */
+    if (cssContent) {
+      await page.addStyleTag({ content: cssContent });
+      await new Promise(function(r) { setTimeout(r, 200); });
+    }
     await new Promise(function(r) { setTimeout(r, 800); });
 
     var bodyHeight = await page.evaluate(function() { return document.body.scrollHeight || document.documentElement.scrollHeight; });
+    var maxHeight = 16000;
+    if (bodyHeight > maxHeight) {
+      console.log("  [Extractor] Page height " + bodyHeight + "px exceeds max " + maxHeight + "px, clamping");
+      bodyHeight = maxHeight;
+    }
     if (bodyHeight > 900) {
       await page.setViewport({ width: width, height: bodyHeight + 100, deviceScaleFactor: scale });
       await new Promise(function(r) { setTimeout(r, 300); });

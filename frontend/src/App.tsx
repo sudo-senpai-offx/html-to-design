@@ -4,6 +4,7 @@ import {
   Monitor, Laptop, Tablet, Smartphone, Image, FileText,
   PenTool, Figma, Layers, Upload, Loader2, CheckCircle2,
   AlertCircle, ArrowRight, SplitSquareHorizontal, Undo2,
+  Clipboard, Terminal, Sparkles, FileCode,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
@@ -210,22 +211,30 @@ export default function App() {
 
   const handleExport = useCallback(async (format: string, pdfOptions?: PdfOptions) => {
     setExporting(format);
+    var noDownload = ["figma-all", "figma-mcp", "inline"];
+    var skipDownload = noDownload.indexOf(format) >= 0;
     const toastId = toast.loading(`Exporting ${format.toUpperCase()}...`, { description: "Rendering in browser" });
     try {
       const blob = await convertToFormat(format, fullHtml, { width, height, scale }, pdfOptions);
       if (!blob || blob.size === 0) throw new Error("Empty response from server");
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `export.${format === "figma" ? "fig" : format === "xd" ? "sketch" : format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+      var downloadUrl = "";
+      if (!skipDownload) {
+        downloadUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        const ext = format;
+        a.download = `export.${ext === "figma" ? "fig" : ext === "xd" ? "sketch" : ext === "clipboard" ? "html" : ext}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
+      }
 
       const sizeKB = (blob.size / 1024).toFixed(1);
       setOutputFile({
-        format, blob, url, filename: `export.${format === "figma" ? "fig" : format === "xd" ? "sketch" : format}`,
+        format, blob, url: downloadUrl,
+        filename: `export.${format === "figma" ? "fig" : format === "xd" ? "sketch" : format === "clipboard" ? "html" : format}`,
         size: blob.size, timestamp: Date.now(),
       });
       setConvertedBlob(blob);
@@ -236,6 +245,7 @@ export default function App() {
       const msg = err?.response?.data?.error || err?.message || "Export failed";
       if (msg.includes("timeout")) toast.error("Timed out — try reducing viewport size", { id: toastId });
       else if (msg.includes("Network") || msg.includes("ECONNREFUSED")) toast.error("Server unreachable — is the backend running?", { id: toastId });
+      else if (err?.response?.status === 500) toast.error(`Server error: ${msg}`, { id: toastId, duration: 6000 });
       else toast.error(msg, { id: toastId });
     } finally {
       setExporting(null);
@@ -290,7 +300,7 @@ export default function App() {
           <div className="p-1.5 rounded-lg bg-brand-accent/20"><Zap size={18} className="text-brand-accent" /></div>
           <div>
             <h1 className="text-sm font-bold tracking-tight">HTML to Design</h1>
-            <p className="text-[10px] text-slate-500">v2.0 — Convert HTML+CSS to PNG, PDF, SVG, Figma, PSD & XD</p>
+            <p className="text-[10px] text-slate-500">v3.0 — HTML+CSS to PNG, PDF, SVG, Figma, PSD, XD, Clipboard & MCP</p>
           </div>
         </div>
         <div className="flex items-center gap-1 bg-brand-medium rounded-lg p-0.5">
@@ -305,7 +315,7 @@ export default function App() {
           ))}
         </div>
         <div className="flex items-center gap-2">
-          {(["png", "pdf", "svg", "figma", "psd", "xd"] as const).map(f => (
+          {(["png", "pdf", "svg", "figma-all", "inline", "psd", "xd"] as const).map(f => (
             <span key={f} className="text-[9px] px-1.5 py-0.5 rounded bg-brand-medium border border-brand-light/30 text-slate-400 font-mono uppercase">
               {f}
             </span>
