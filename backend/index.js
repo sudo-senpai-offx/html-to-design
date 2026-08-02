@@ -9,6 +9,7 @@ const { convertTo } = require("./converters");
 const { getPool, shutdownPool } = require("./lib/browser-pool");
 const { getConnector, stopConnector } = require("./lib/figma-connector");
 const { getTempDir } = require("./lib/temp-dir");
+const { getDefaults } = require("./lib/config");
 
 const PORT = parseInt(process.env.PORT) || 3000;
 const TEMP_DIR = getTempDir();
@@ -106,8 +107,12 @@ setInterval(function() {
 
 var { JSDOM } = require("jsdom");
 
+/* Returns { html, css } — html is the sanitized body content, css is every
+ * <style> block extracted from the document (head styles must survive, they
+ * are the source of truth for uploaded HTML files). <link rel="stylesheet">
+ * tags are kept so external stylesheets still load during rendering. */
 function sanitizeHtml(html) {
-  if (!html) return "";
+  if (!html) return { html: "", css: "" };
   try {
     var dom = new JSDOM(html);
     var doc = dom.window.document;
@@ -133,11 +138,26 @@ function sanitizeHtml(html) {
       }
     });
 
-    return dom.window.document.body.innerHTML;
+    var cssParts = [];
+    var styleEls = doc.querySelectorAll("style");
+    styleEls.forEach(function(s) {
+      if (s.textContent && s.textContent.trim()) cssParts.push(s.textContent);
+      s.remove();
+    });
+
+    var linkTags = [];
+    var linkEls = doc.querySelectorAll('link[rel="stylesheet"]');
+    linkEls.forEach(function(l) { linkTags.push(l.outerHTML); });
+
+    var bodyHtml = doc.body.innerHTML;
+    if (linkTags.length > 0) bodyHtml = linkTags.join("\n") + "\n" + bodyHtml;
+
+    return { html: bodyHtml, css: cssParts.join("\n") };
   } catch (e) {
-    return html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    var stripped = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
       .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, "")
       .replace(/javascript:/gi, "");
+    return { html: stripped, css: "" };
   }
 }
 
@@ -193,6 +213,18 @@ app.get("/api/formats", function(req, res) {
       { id: "inline", label: "Inline HTML", description: "Single HTML file with all CSS styles inlined" },
       { id: "psd", label: "PSD", description: "Adobe Photoshop document with editable layers" },
       { id: "xd", label: "XD", description: "Sketch-compatible design file (opens in Figma, Sketch, Penpot, XD)" },
+    ],
+  });
+});
+
+app.get("/api/config", function(req, res) {
+  res.json({
+    defaults: getDefaults(),
+    overridableViaEnv: [
+      "CONVERT_MAX_ELEMENTS", "CONVERT_MAX_DEPTH", "CONVERT_MAX_HEIGHT",
+      "CONVERT_MAX_BATCH_BYTES", "CONVERT_DEFAULT_WIDTH", "CONVERT_DEFAULT_HEIGHT",
+      "CONVERT_DEFAULT_SCALE", "CONVERT_FULL_PAGE", "CONVERT_TRANSPARENT",
+      "PDF_FORMAT", "PDF_MARGIN", "PDF_LANDSCAPE", "PDF_PRINT_BACKGROUND", "PDF_HEADER_FOOTER",
     ],
   });
 });
@@ -260,7 +292,11 @@ app.post("/api/convert/:format", rateLimit(30, 60000), upload.single("html"), as
       return res.status(400).json({ error: "No HTML content provided. Send html in body or upload a file." });
     }
 
-    htmlContent = sanitizeHtml(htmlContent);
+    var sanitized = sanitizeHtml(htmlContent);
+    htmlContent = sanitized.html;
+    if (sanitized.css) {
+      cssContent = [sanitized.css, cssContent].filter(Boolean).join("\n");
+    }
 
     var width = Math.min(Math.max(parseInt(req.body.width) || 1440, 320), 3840);
     var height = Math.min(Math.max(parseInt(req.body.height) || 900, 200), 2160);
@@ -347,7 +383,8 @@ app.post("/api/compare", rateLimit(5, 60000), async function(req, res) {
       return res.status(400).json({ error: "HTML content is required" });
     }
 
-    var fullHtml = buildHtmlDocument(sanitizeHtml(html), css);
+    var sanitized = sanitizeHtml(html);
+    var fullHtml = buildHtmlDocument(sanitized.html, [sanitized.css, css].filter(Boolean).join("\n"));
     var convBuf = null;
     if (convertedBuffer) {
       try {

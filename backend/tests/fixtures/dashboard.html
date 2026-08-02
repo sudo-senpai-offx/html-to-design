@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pulse Analytics — Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1d212b;
+    --line: #2a2f3a;
+    --text: #e6e8ee;
+    --muted: #8b93a3;
+    --accent: #6366f1;
+    --accent-2: #22d3ee;
+    --green: #34d399;
+    --red: #f87171;
+    --amber: #fbbf24;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 13px; }
+  .app { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+
+  aside.sidebar { background: var(--panel); border-right: 1px solid var(--line); padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 20px; }
+  .brand .mark { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; }
+  .brand b { font-size: 15px; }
+  .brand span { display: block; font-size: 11px; color: var(--muted); }
+
+  .nav-label { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); padding: 16px 8px 6px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--muted); cursor: pointer; }
+  .nav-item:hover { background: var(--panel-2); color: var(--text); }
+  .nav-item.active { background: rgba(99,102,241,.15); color: #a5b4fc; font-weight: 600; }
+  .nav-item .dot { width: 16px; height: 16px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+  .nav-item .count { margin-left: auto; background: var(--panel-2); border-radius: 999px; padding: 1px 8px; font-size: 11px; }
+
+  .sidebar-foot { margin-top: auto; padding: 12px 8px; border-top: 1px solid var(--line); display: flex; gap: 10px; align-items: center; }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #f59e0b, #ef4444); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+  .sidebar-foot .who { flex: 1; }
+  .sidebar-foot .who b { font-size: 12px; display: block; }
+  .sidebar-foot .who span { font-size: 11px; color: var(--muted); }
+
+  .main { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+  header.topbar { display: flex; align-items: center; gap: 16px; }
+  .topbar h1 { font-size: 20px; font-weight: 700; }
+  .topbar .sub { color: var(--muted); font-size: 12px; }
+  .topbar .spacer { flex: 1; }
+  .search { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; width: 220px; color: var(--muted); font-size: 12px; }
+  .date-pill { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 8px; }
+  .icon-btn { background: var(--panel); border: 1px solid var(--line); width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .kpi .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; display: flex; justify-content: space-between; }
+  .kpi .value { font-size: 26px; font-weight: 700; margin: 8px 0 4px; font-variant-numeric: tabular-nums; }
+  .kpi .delta { font-size: 12px; font-weight: 600; }
+  .kpi .delta.up { color: var(--green); }
+  .kpi .delta.down { color: var(--red); }
+  .kpi .spark { margin-top: 8px; height: 28px; }
+
+  .row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .panel h3 { font-size: 13px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .panel h3 .hint { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; }
+
+  .legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); }
+  .legend .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); font-weight: 600; }
+  td { padding: 10px; border-bottom: 1px solid var(--line); font-size: 12px; vertical-align: middle; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .cell-user { display: flex; align-items: center; gap: 8px; }
+  .cell-user .uav { width: 24px; height: 24px; border-radius: 50%; background: var(--panel-2); display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .cell-user b { display: block; }
+  .cell-user span { color: var(--muted); font-size: 11px; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 10px; }
+  .pill.green { background: rgba(52,211,153,.15); color: var(--green); }
+  .pill.amber { background: rgba(251,191,36,.15); color: var(--amber); }
+  .pill.red { background: rgba(248,113,113,.15); color: var(--red); }
+  .pill.indigo { background: rgba(99,102,241,.15); color: #a5b4fc; }
+  .bar-cell { display: flex; align-items: center; gap: 8px; }
+  .bar-track { flex: 1; height: 6px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; }
+
+  .channels { display: flex; flex-direction: column; gap: 12px; }
+  .channel { }
+  .channel .top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
+  .channel .top b { font-weight: 600; }
+  .channel .track { height: 8px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+  .channel .fill { height: 100%; border-radius: 999px; }
+
+  .donut-wrap { display: flex; align-items: center; gap: 20px; }
+  .donut-legend { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+  .donut-legend .li { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .donut-legend .sw { width: 10px; height: 10px; border-radius: 3px; }
+  .donut-legend b { margin-left: 16px; font-variant-numeric: tabular-nums; }
+
+  .activity { display: flex; flex-direction: column; gap: 14px; }
+  .act { display: flex; gap: 12px; }
+  .act .tick { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+  .act .tick.t1 { background: rgba(99,102,241,.2); }
+  .act .tick.t2 { background: rgba(34,211,238,.2); }
+  .act .tick.t3 { background: rgba(251,191,36,.2); }
+  .act .tick.t4 { background: rgba(52,211,153,.2); }
+  .act p { font-size: 12px; line-height: 1.5; }
+  .act span { color: var(--muted); font-size: 11px; display: block; margin-top: 2px; }
+
+  .donut-svg { width: 140px; height: 140px; }
+  .center-label { font-size: 20px; font-weight: 700; }
+
+  @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(2,1fr); } .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">P</div>
+      <div><b>Pulse</b><span>Analytics</span></div>
+    </div>
+
+    <div class="nav-label">Overview</div>
+    <div class="nav-item active"><span class="dot">◧</span> Dashboard</div>
+    <div class="nav-item"><span class="dot">◈</span> Reports <span class="count">12</span></div>
+    <div class="nav-item"><span class="dot">◉</span> Alerts <span class="count">4</span></div>
+
+    <div class="nav-label">Workspace</div>
+    <div class="nav-item"><span class="dot">▤</span> Projects</div>
+    <div class="nav-item"><span class="dot">▦</span> Funnels</div>
+    <div class="nav-item"><span class="dot">▥</span> Cohorts</div>
+    <div class="nav-item"><span class="dot">▩</span> Segments</div>
+    <div class="nav-item"><span class="dot">⚙</span> Integrations</div>
+
+    <div class="nav-label">Admin</div>
+    <div class="nav-item"><span class="dot">👤</span> Team</div>
+    <div class="nav-item"><span class="dot">🔒</span> Billing</div>
+    <div class="nav-item"><span class="dot">❔</span> Support</div>
+
+    <div class="sidebar-foot">
+      <div class="avatar">AK</div>
+      <div class="who"><b>Aisha Khan</b><span>Admin · Pro plan</span></div>
+      <span style="color:var(--muted)">⋯</span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1>Good morning, Aisha 👋</h1>
+        <div class="sub">Here's what's happening across your products today.</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="search">⌕ Search metrics, funnels, users...</div>
+      <div class="date-pill">📅 Aug 1 – Aug 31, 2026 <span style="color:var(--muted)">▾</span></div>
+      <div class="icon-btn">📤</div>
+      <div class="icon-btn">🔔</div>
+    </header>
+
+    <section class="kpi-grid">
+      <div class="kpi">
+        <div class="label"><span>Revenue</span><span style="color:var(--muted)">$</span></div>
+        <div class="value">$284,120</div>
+        <div class="delta up">▲ 12.4% vs last month</div>
+        <svg class="spark" viewBox="0 0 120 28" preserveAspectRatio="none">
+          <polyline points="0,22 12,20 24,24 36,16 48,18 60,10 72,12 84,6 96,9 108,4 120,6" fill="none" stroke="#34d399" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="kpi">
+        <div class="label"><span>Active users</span><span style="color:var(--muted)">◔</span></div>
+        <div class="value">48,209</div>
+        <div class="delta up">▲ 3.1% vs last month</div>
+        <svg class="spark" viewBox="0 0 120 28" preserveAspectRatio="none">
+          <polyline points="0,18 12,16 24,20 36,14 48,15 60,8 72,10 84,5 96,7 108,3 120,2" fill="none" stroke="#6366f1" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="kpi">
+        <div class="label"><span>Conversion rate</span><span style="color:var(--muted)">%</span></div>
+        <div class="value">4.82%</div>
+        <div class="delta up">▲ 0.6pp vs last month</div>
+        <svg class="spark" viewBox="0 0 120 28" preserveAspectRatio="none">
+          <polyline points="0,24 12,22 24,23 36,19 48,21 60,17 72,18 84,14 96,16 108,11 120,10" fill="none" stroke="#22d3ee" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="kpi">
+        <div class="label"><span>Churn rate</span><span style="color:var(--muted)">%</span></div>
+        <div class="value">1.94%</div>
+        <div class="delta down">▼ 0.3pp improvement</div>
+        <svg class="spark" viewBox="0 0 120 28" preserveAspectRatio="none">
+          <polyline points="0,6 12,8 24,5 36,10 48,9 60,14 72,12 84,18 96,17 108,21 120,20" fill="none" stroke="#f87171" stroke-width="2"/>
+        </svg>
+      </div>
+    </section>
+
+    <section class="row">
+      <div class="panel">
+        <h3>Revenue over time <span class="hint">Monthly</span></h3>
+        <div class="legend">
+          <span><span class="sw" style="background:var(--accent)"></span>This year</span>
+          <span><span class="sw" style="background:rgba(99,102,241,.3)"></span>Last year</span>
+        </div>
+        <svg viewBox="0 0 600 220" width="100%" height="220" style="margin-top:12px">
+          <line x1="0" y1="180" x2="600" y2="180" stroke="#2a2f3a" stroke-width="1"/>
+          <line x1="0" y1="120" x2="600" y2="120" stroke="#22262f" stroke-width="1"/>
+          <line x1="0" y1="60" x2="600" y2="60" stroke="#22262f" stroke-width="1"/>
+          <line x1="0" y1="0" x2="600" y2="0" stroke="#22262f" stroke-width="1"/>
+          <polygon points="0,168 50,150 100,158 150,120 200,128 250,96 300,110 350,74 400,88 450,50 500,66 550,40 600,30 600,180 0,180" fill="rgba(99,102,241,.15)"/>
+          <polyline points="0,168 50,150 100,158 150,120 200,128 250,96 300,110 350,74 400,88 450,50 500,66 550,40 600,30" fill="none" stroke="#6366f1" stroke-width="3"/>
+          <polyline points="0,178 50,170 100,174 150,160 200,164 250,150 300,155 350,140 400,144 450,128 500,134 550,118 600,122" fill="none" stroke="rgba(99,102,241,.35)" stroke-width="2"/>
+          <circle cx="450" cy="50" r="4" fill="#a5b4fc"/>
+          <text x="440" y="38" fill="#a5b4fc" font-size="11" font-weight="600">$52,400</text>
+          <text x="0" y="196" fill="#8b93a3" font-size="10">Jan</text>
+          <text x="50" y="196" fill="#8b93a3" font-size="10">Feb</text>
+          <text x="100" y="196" fill="#8b93a3" font-size="10">Mar</text>
+          <text x="150" y="196" fill="#8b93a3" font-size="10">Apr</text>
+          <text x="200" y="196" fill="#8b93a3" font-size="10">May</text>
+          <text x="250" y="196" fill="#8b93a3" font-size="10">Jun</text>
+          <text x="300" y="196" fill="#8b93a3" font-size="10">Jul</text>
+          <text x="350" y="196" fill="#8b93a3" font-size="10">Aug</text>
+          <text x="400" y="196" fill="#8b93a3" font-size="10">Sep</text>
+          <text x="450" y="196" fill="#8b93a3" font-size="10">Oct</text>
+          <text x="500" y="196" fill="#8b93a3" font-size="10">Nov</text>
+          <text x="550" y="196" fill="#8b93a3" font-size="10">Dec</text>
+        </svg>
+      </div>
+
+      <div class="panel">
+        <h3>Traffic sources <span class="hint">30 days</span></h3>
+        <div class="donut-wrap">
+          <svg class="donut-svg" viewBox="0 0 140 140">
+            <circle cx="70" cy="70" r="56" fill="none" stroke="#2a2f3a" stroke-width="18"/>
+            <circle cx="70" cy="70" r="56" fill="none" stroke="#6366f1" stroke-width="18" stroke-dasharray="120 352" stroke-linecap="butt"/>
+            <circle cx="70" cy="70" r="56" fill="none" stroke="#22d3ee" stroke-width="18" stroke-dasharray="80 352" stroke-dashoffset="-120"/>
+            <circle cx="70" cy="70" r="56" fill="none" stroke="#fbbf24" stroke-width="18" stroke-dasharray="60 352" stroke-dashoffset="-200"/>
+            <circle cx="70" cy="70" r="56" fill="none" stroke="#34d399" stroke-width="18" stroke-dasharray="50 352" stroke-dashoffset="-260"/>
+            <circle cx="70" cy="70" r="42" fill="var(--panel)"/>
+            <text x="70" y="66" text-anchor="middle" fill="#e6e8ee" font-size="18" font-weight="700" class="center-label">92k</text>
+            <text x="70" y="84" text-anchor="middle" fill="#8b93a3" font-size="9">visits</text>
+          </svg>
+          <div class="donut-legend">
+            <div class="li"><span class="sw" style="background:var(--accent)"></span>Organic <b>38%</b></div>
+            <div class="li"><span class="sw" style="background:var(--accent-2)"></span>Referral <b>26%</b></div>
+            <div class="li"><span class="sw" style="background:var(--amber)"></span>Paid <b>21%</b></div>
+            <div class="li"><span class="sw" style="background:var(--green)"></span>Direct <b>15%</b></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>Top pages <span class="hint">Sorted by sessions · updated 2m ago</span></h3>
+      <table>
+        <thead>
+          <tr><th>Page</th><th>Sessions</th><th>Engagement</th><th>Conv. rate</th><th>Bounce</th><th style="width:180px">Trend</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="cell-user"><span class="uav">🏠</span><span><b>/home</b><span>Landing page</span></span></span></td>
+            <td>41,082</td>
+            <td>3m 42s</td>
+            <td><span class="pill green">4.9%</span></td>
+            <td>38.2%</td>
+            <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:92%;background:var(--accent)"></div></div></div></td>
+          </tr>
+          <tr>
+            <td><span class="cell-user"><span class="uav">🛒</span><span><b>/pricing</b><span>Pricing page</span></span></span></td>
+            <td>28,447</td>
+            <td>4m 12s</td>
+            <td><span class="pill green">6.1%</span></td>
+            <td>31.0%</td>
+            <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:74%;background:var(--accent)"></div></div></div></td>
+          </tr>
+          <tr>
+            <td><span class="cell-user"><span class="uav">📚</span><span><b>/docs/getting-started</b><span>Documentation</span></span></span></td>
+            <td>19,220</td>
+            <td>6m 05s</td>
+            <td><span class="pill amber">2.4%</span></td>
+            <td>44.6%</td>
+            <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:58%;background:var(--accent-2)"></div></div></div></td>
+          </tr>
+          <tr>
+            <td><span class="cell-user"><span class="uav">👥</span><span><b>/blog</b><span>Marketing blog</span></span></span></td>
+            <td>14,956</td>
+            <td>2m 18s</td>
+            <td><span class="pill red">1.1%</span></td>
+            <td>62.3%</td>
+            <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:40%;background:var(--amber)"></div></div></div></td>
+          </tr>
+          <tr>
+            <td><span class="cell-user"><span class="uav">⚙️</span><span><b>/app/dashboard</b><span>Product app</span></span></span></td>
+            <td>11,283</td>
+            <td>8m 44s</td>
+            <td><span class="pill indigo">8.7%</span></td>
+            <td>22.1%</td>
+            <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:85%;background:var(--green)"></div></div></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="row">
+      <div class="panel">
+        <h3>Acquisition channels <span class="hint">Conversions</span></h3>
+        <div class="channels">
+          <div class="channel">
+            <div class="top"><span>Organic search</span><b>38.4% · 11,204</b></div>
+            <div class="track"><div class="fill" style="width:92%;background:var(--accent)"></div></div>
+          </div>
+          <div class="channel">
+            <div class="top"><span>Direct</span><b>26.1% · 7,611</b></div>
+            <div class="track"><div class="fill" style="width:66%;background:var(--accent-2)"></div></div>
+          </div>
+          <div class="channel">
+            <div class="top"><span>Referrals</span><b>18.7% · 5,450</b></div>
+            <div class="track"><div class="fill" style="width:48%;background:var(--green)"></div></div>
+          </div>
+          <div class="channel">
+            <div class="top"><span>Paid ads</span><b>12.2% · 3,556</b></div>
+            <div class="track"><div class="fill" style="width:31%;background:var(--amber)"></div></div>
+          </div>
+          <div class="channel">
+            <div class="top"><span>Social</span><b>4.6% · 1,342</b></div>
+            <div class="track"><div class="fill" style="width:12%;background:var(--red)"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Recent activity <span class="hint">Live</span></h3>
+        <div class="activity">
+          <div class="act">
+            <div class="tick t1">💰</div>
+            <div><p><b>$1,240</b> payment received from <b>Acme Corp</b></p><span>2 minutes ago</span></div>
+          </div>
+          <div class="act">
+            <div class="tick t2">👤</div>
+            <div><p><b>New signup</b> — sales.pipeline upgrade completed</p><span>18 minutes ago</span></div>
+          </div>
+          <div class="act">
+            <div class="tick t3">⚠️</div>
+            <div><p><b>Anomaly detected</b> — checkout page conversion dropped 22%</p><span>1 hour ago</span></div>
+          </div>
+          <div class="act">
+            <div class="tick t4">📊</div>
+            <div><p><b>Weekly report</b> generated and emailed to 4,112 subscribers</p><span>3 hours ago</span></div>
+          </div>
+          <div class="act">
+            <div class="tick t1">🏷️</div>
+            <div><p><b>Segment updated</b> — "High intent visitors" now 9,204 users</p><span>5 hours ago</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>Team performance <span class="hint">This quarter</span></h3>
+      <table>
+        <thead>
+          <tr><th>Member</th><th>Role</th><th>Quota</th><th>Closed</th><th>Pipeline</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="cell-user"><span class="uav">🚀</span><b>Marcus Lee</b></span></td><td>AE — Enterprise</td><td>$220k</td><td>$241k</td><td>$88k</td><td><span class="pill green">On track</span></td></tr>
+          <tr><td><span class="cell-user"><span class="uav">🌿</span><b>Priya Sharma</b></span></td><td>AE — Mid-Market</td><td>$160k</td><td>$152k</td><td>$64k</td><td><span class="pill amber">Watch</span></td></tr>
+          <tr><td><span class="cell-user"><span class="uav">⚡</span><b>Tomás Rivera</b></span></td><td>BDR</td><td>120 leads</td><td>141 leads</td><td>—</td><td><span class="pill green">On track</span></td></tr>
+          <tr><td><span class="cell-user"><span class="uav">🎯</span><b>Hannah Cole</b></span></td><td>AE — SMB</td><td>$90k</td><td>$61k</td><td>$52k</td><td><span class="pill red">At risk</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </div>
+</div>
+</body>
+</html>

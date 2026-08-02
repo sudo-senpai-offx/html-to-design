@@ -1,4 +1,5 @@
 const { getPool } = require("../lib/browser-pool");
+const { resolveFormatOptions } = require("../lib/config");
 
 function escapeXml(str) {
   if (typeof str !== "string") return "";
@@ -8,7 +9,8 @@ function escapeXml(str) {
 
 var SVG_EXTRACT_SCRIPT = `
 (function() {
-  var MAX_ELEMENTS = 10000;
+  var MAX_ELEMENTS = __MAX_ELEMENTS__;
+  var MAX_DEPTH = __MAX_DEPTH__;
   var elementCount = 0;
   var flatResult = [];
 
@@ -38,9 +40,43 @@ var SVG_EXTRACT_SCRIPT = `
     return props;
   }
 
+  function svgToDataUri(el) {
+    try {
+      var clone = el.cloneNode(true);
+      clone.removeAttribute("class");
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+      var rect = el.getBoundingClientRect();
+      clone.setAttribute("width", Math.max(1, Math.round(rect.width)));
+      clone.setAttribute("height", Math.max(1, Math.round(rect.height)));
+      var xml = new XMLSerializer().serializeToString(clone);
+      return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(xml)));
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function normalizeSrc(src) {
+    if (!src || typeof src !== "string") return "";
+    if (src.startsWith("data:") && !src.includes(";base64,")) {
+      var header = src.slice(0, src.indexOf(","));
+      var comma = src.indexOf(",");
+      if (comma > 0) {
+        try {
+          var mime = (header.match(/^data:([^;]+)/) || [])[1] || "image/png";
+          var raw = decodeURIComponent(src.slice(comma + 1));
+          return "data:" + mime + ";base64," + btoa(raw);
+        } catch (e) {
+          return src;
+        }
+      }
+    }
+    return src;
+  }
+
   function walk(el, depth) {
     try {
-      if (!el || depth > 60 || el.nodeType !== 1) return;
+      if (!el || depth > MAX_DEPTH || el.nodeType !== 1) return;
       if (elementCount >= MAX_ELEMENTS) return;
       var tag = el.tagName.toLowerCase();
       if (tag === "script" || tag === "style" || tag === "noscript" || tag === "br") return;
@@ -61,11 +97,22 @@ var SVG_EXTRACT_SCRIPT = `
       }
 
       var props = getProps(el);
-      var src = tag === "img" ? (el.currentSrc || el.src || "") : "";
+      var src = "";
+
+      if (tag === "img") {
+        src = normalizeSrc(el.currentSrc || el.src || "");
+      } else if (tag === "svg" || (el.namespaceURI && el.namespaceURI.indexOf("svg") >= 0 && el.children.length > 0)) {
+        src = svgToDataUri(el);
+      }
 
       var children = [];
-      for (var j = 0; j < el.children.length; j++) {
-        walk(el.children[j], depth + 1);
+      if (tag === "svg") {
+        /* Inline SVG captured as a raster image — do not descend into primitives */
+        children = [];
+      } else {
+        for (var j = 0; j < el.children.length; j++) {
+          walk(el.children[j], depth + 1);
+        }
       }
 
       elementCount++;
@@ -76,6 +123,8 @@ var SVG_EXTRACT_SCRIPT = `
         props: props, text: text, src: src,
         zIndex: parseInt(cs.zIndex) || 0,
         childCount: el.children.length,
+        _zIndex: parseInt(cs.zIndex) || 0,
+        _depth: depth,
       });
     } catch(e) {}
   }
@@ -106,13 +155,17 @@ function parseColor(cssColor) {
     var m = cssColor.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/);
     if (m) { r = parseInt(m[1]); g = parseInt(m[2]); b = parseInt(m[3]); a = parseFloat(m[4]); }
   } else {
-    var el = document.createElement("div");
-    el.style.color = cssColor;
-    document.body.appendChild(el);
-    var cs = window.getComputedStyle(el);
-    var rgb = cs.color.match(/(\d+)/g);
-    document.body.removeChild(el);
-    if (rgb) { r = parseInt(rgb[0]); g = parseInt(rgb[1]); b = parseInt(rgb[2]); }
+    try {
+      var el = document.createElement("div");
+      el.style.color = cssColor;
+      document.body.appendChild(el);
+      var cs = window.getComputedStyle(el);
+      var rgb = cs.color.match(/(\d+)/g);
+      document.body.removeChild(el);
+      if (rgb) { r = parseInt(rgb[0]); g = parseInt(rgb[1]); b = parseInt(rgb[2]); }
+    } catch (e) {
+      return null;
+    }
   }
 
   if (r === undefined || isNaN(r)) return null;
@@ -193,8 +246,9 @@ function buildSvg(pw, ph, elements) {
 
     var hasBorder = (borderTW > 0 || borderRW > 0 || borderBW > 0 || borderLW > 0);
     var hasBg = (bgColor && bgColor !== "transparent" && bgColor !== "rgba(0,0,0,0)");
-    var hasImage = bgImage && !bgImage.startsWith("none") && !bgImage.startsWith("linear-gradient") && !bgImage.startsWith("radial-gradient");
-    var hasGradient = bgImage && (bgImage.startsWith("linear-gradient") || bgImage.startsWith("radial-gradient") || bgImage.startsWith("conic-gradient"));
+    var isGradient = bgImage && /(linear|radial|conic)-gradient/.test(bgImage);
+    var hasImage = bgImage && !bgImage.startsWith("none") && !isGradient;
+    var hasGradient = isGradient;
     var maxRadius = Math.max(radiusTL, radiusTR, radiusBR, radiusBL);
     var clipsContent = overflow === "hidden" || overflow === "scroll" || overflow === "auto";
 
@@ -247,7 +301,7 @@ function buildSvg(pw, ph, elements) {
       if (borderRW > minBorder && borderRC) body.push('<line x1="' + (x + w) + '" y1="' + y + '" x2="' + (x + w) + '" y2="' + (y + h) + '" stroke="' + escapeXml(borderRC) + '" stroke-width="' + borderRW + '" />');
     }
 
-    if (el.tag === "img" && el.src) {
+    if (el.src) {
       body.push('<image x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" preserveAspectRatio="xMidYMid slice" xlink:href="' + escapeXml(el.src) + '" />');
     }
 
@@ -300,7 +354,8 @@ function buildSvg(pw, ph, elements) {
 function _parseGradientDef(id, cssVal, x, y, w, h) {
   if (!cssVal || cssVal === "none") return null;
 
-  var linearMatch = cssVal.match(/linear-gradient\(([^)]+)\)/);
+  var nested = "(?:[^()]|\\([^)]*\\))*";
+  var linearMatch = cssVal.match(new RegExp("linear-gradient\\((" + nested + ")\\)"));
   if (linearMatch) {
     var parts = linearMatch[1].split(/,(?![^()]*\))/);
     var angle = 180;
@@ -319,18 +374,28 @@ function _parseGradientDef(id, cssVal, x, y, w, h) {
       parts.unshift("");
     }
 
-    var stops = [];
+    var stopParts = [];
     for (var si = 0; si < parts.length; si++) {
       var part = parts[si].trim();
-      if (!part || part.match(/^\d/)) continue;
-      var stopMatch = part.match(/(rgba?\([^)]+\)|#[0-9a-fA-F]+|[a-z]+)\s*([\d.]+%)?/);
+      if (!part || part.match(/^\d/) || part.match(/^(to |at |ellipse|circle|closest|farthest)/)) continue;
+      stopParts.push(part);
+    }
+
+    var stops = [];
+    for (var si = 0; si < stopParts.length; si++) {
+      var stopMatch = stopParts[si].match(/(rgba?\([^)]+\)|#[0-9a-fA-F]+|[a-z]+)\s*([\d.]+%)?/);
       if (stopMatch) {
-        stops.push({ color: stopMatch[1], offset: stopMatch[2] || (si === 0 ? "0%" : si === parts.length - 1 ? "100%" : (si / (parts.length - 1) * 100) + "%") });
+        var off = stopMatch[2];
+        if (!off) {
+          off = si === 0 ? "0%" : si === stopParts.length - 1 ? "100%" : (si / (stopParts.length - 1) * 100) + "%";
+        }
+        stops.push({ color: stopMatch[1], offset: off });
       }
     }
 
     if (stops.length >= 2) {
-      var gradStr = '<linearGradient id="' + id + '" x1="0%" y1="0%" x2="' + (Math.cos(angle * Math.PI / 180)).toFixed(4) + '" y2="' + (Math.sin(angle * Math.PI / 180)).toFixed(4) + '">\n';
+      var angleRad = (90 - angle) * Math.PI / 180;
+      var gradStr = '<linearGradient id="' + id + '" x1="0%" y1="0%" x2="' + (Math.cos(angleRad)).toFixed(4) + '" y2="' + (-Math.sin(angleRad)).toFixed(4) + '">\n';
       for (var si2 = 0; si2 < stops.length; si2++) {
         gradStr += '        <stop offset="' + stops[si2].offset + '" stop-color="' + stops[si2].color + '" />\n';
       }
@@ -339,13 +404,13 @@ function _parseGradientDef(id, cssVal, x, y, w, h) {
     }
   }
 
-  var radialMatch = cssVal.match(/radial-gradient\(([^)]+)\)/);
+  var radialMatch = cssVal.match(new RegExp("radial-gradient\\((" + nested + ")\\)"));
   if (radialMatch) {
     var parts = radialMatch[1].split(/,(?![^()]*\))/);
     var stops = [];
     for (var si = 0; si < parts.length; si++) {
       var part = parts[si].trim();
-      if (!part) continue;
+      if (!part || part.match(/^(at |ellipse|circle|closest|farthest|[^\s]*deg|[^\s]*px)/)) continue;
       var stopMatch = part.match(/(rgba?\([^)]+\)|#[0-9a-fA-F]+|[a-z]+)\s*([\d.]+%)?/);
       if (stopMatch) {
         stops.push({ color: stopMatch[1], offset: stopMatch[2] || (si === 0 ? "0%" : si === parts.length - 1 ? "100%" : (si / (parts.length - 1) * 100) + "%") });
@@ -365,7 +430,8 @@ function _parseGradientDef(id, cssVal, x, y, w, h) {
 }
 
 async function convertToSvg(html, options) {
-  var { width = 1440, height = 900, scale = 2 } = options || {};
+  var cfg = resolveFormatOptions("svg", options);
+  var { width = cfg.width, height = cfg.height, scale = cfg.scale } = options || {};
   var pool = getPool();
 
   return pool.execute(async (page) => {
@@ -374,7 +440,10 @@ async function convertToSvg(html, options) {
     await page.evaluate(() => document.fonts && document.fonts.ready);
     await new Promise((r) => setTimeout(r, 800));
 
-    var data = await page.evaluate(SVG_EXTRACT_SCRIPT);
+    var script = SVG_EXTRACT_SCRIPT
+      .split("__MAX_ELEMENTS__").join(String(cfg.maxElements))
+      .split("__MAX_DEPTH__").join(String(cfg.maxDepth));
+    var data = await page.evaluate(script);
     var elements = data.elements || [];
     var pw = data.pageWidth || width;
     var ph = data.pageHeight || height;

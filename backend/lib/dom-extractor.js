@@ -1,4 +1,5 @@
 const { getPool } = require("./browser-pool");
+const { resolveFormatOptions } = require("./config");
 const path = require("path");
 
 var EXTRACT_SCRIPT = `
@@ -95,8 +96,8 @@ var EXTRACT_SCRIPT = `
   }
 
   var svgRasterList = [];
-  var MAX_ELEMENTS = 25000;
-  var MAX_DEPTH = 80;
+  var MAX_ELEMENTS = __MAX_ELEMENTS__;
+  var MAX_DEPTH = __MAX_DEPTH__;
 
   function walk(el, depth) {
     try {
@@ -250,8 +251,9 @@ var EXTRACT_SCRIPT = `
 `;
 
 async function extractFullDOM(htmlFilePath, options) {
-  var width = (options && options.width) || 1440;
-  var scale = (options && options.scale) || 2;
+  var cfg = resolveFormatOptions("extract", options);
+  var width = (options && options.width) || cfg.width;
+  var scale = (options && options.scale) || cfg.scale;
   var cssContent = (options && options.css) || "";
   var pool = getPool();
 
@@ -287,7 +289,9 @@ async function extractFullDOM(htmlFilePath, options) {
       await new Promise(function(r) { setTimeout(r, 300); });
     }
 
-    var result = await page.evaluate(EXTRACT_SCRIPT);
+    var result = await page.evaluate(EXTRACT_SCRIPT
+      .split("__MAX_ELEMENTS__").join(String(cfg.maxElements))
+      .split("__MAX_DEPTH__").join(String(cfg.maxDepth)));
     var flatElements = result.flatElements;
     var svgRasterList = result.svgRasterList || [];
     var pageHeight = await page.evaluate(function() { return document.documentElement.scrollHeight; });

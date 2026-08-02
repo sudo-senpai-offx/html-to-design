@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Art of the Long-Form Article — Design Systems Today</title>
+<style>
+  :root {
+    --serif: Georgia, "Times New Roman", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --ink: #1f2933;
+    --soft: #52606d;
+    --faint: #7b8794;
+    --line: #e4e7eb;
+    --accent: #8a2be2;
+    --accent-soft: #f3ebff;
+    --bg: #fbfaf8;
+    --paper: #ffffff;
+    --code-bg: #0f172a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--serif); font-size: 18px; line-height: 1.75; }
+
+  .topbar { position: sticky; top: 0; z-index: 40; background: rgba(251,250,248,.9); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); font-family: var(--sans); font-size: 14px; }
+  .topbar-inner { max-width: 1120px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 24px; }
+  .brand-sans { font-weight: 800; letter-spacing: -.01em; font-size: 16px; }
+  .brand-sans em { color: var(--accent); font-style: normal; }
+  .topbar nav { display: flex; gap: 20px; }
+  .topbar nav a { color: var(--soft); text-decoration: none; font-weight: 500; }
+  .topbar nav a:hover { color: var(--ink); }
+  .topbar .cta { margin-left: auto; background: var(--accent); color: #fff; border-radius: 6px; padding: 6px 14px; font-weight: 600; text-decoration: none; }
+
+  .article-wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 80px; }
+
+  .kicker { font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px; }
+  h1.hed { font-size: 42px; line-height: 1.15; letter-spacing: -.02em; margin-bottom: 16px; }
+  .dek { font-size: 20px; color: var(--soft); line-height: 1.5; margin-bottom: 24px; }
+
+  .byline { display: flex; align-items: center; gap: 12px; padding-bottom: 24px; border-bottom: 1px solid var(--line); margin-bottom: 32px; font-family: var(--sans); }
+  .byline .avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #ff6b6b); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; }
+  .byline .meta b { font-size: 14px; display: block; }
+  .byline .meta span { font-size: 13px; color: var(--faint); }
+
+  .dropcap::first-letter { float: left; font-size: 62px; line-height: .9; font-weight: 700; padding-right: 8px; padding-top: 4px; color: var(--accent); }
+
+  p { margin-bottom: 24px; }
+  .lede { font-size: 19px; color: var(--soft); }
+  h2 { font-family: var(--sans); font-size: 26px; font-weight: 700; margin: 40px 0 16px; letter-spacing: -.01em; }
+  h3 { font-family: var(--sans); font-size: 20px; font-weight: 700; margin: 28px 0 12px; }
+  blockquote { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 20px 24px; margin: 28px 0; font-style: italic; font-size: 20px; color: #3a2b52; border-radius: 0 10px 10px 0; }
+  blockquote cite { display: block; font-style: normal; font-family: var(--sans); font-size: 13px; color: var(--faint); margin-top: 10px; }
+
+  figure { margin: 32px 0; }
+  figure img { width: 100%; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+  figure figcaption { font-family: var(--sans); font-size: 13px; color: var(--faint); text-align: center; margin-top: 10px; }
+  .fig-float { float: right; width: 320px; margin: 8px 0 16px 24px; }
+
+  .pull-quote { display: flex; gap: 16px; align-items: flex-start; margin: 32px 0; font-family: var(--sans); }
+  .pull-quote .mark { font-size: 64px; line-height: .6; color: var(--accent); font-family: Georgia, serif; }
+  .pull-quote p { font-size: 22px; font-weight: 700; color: var(--ink); font-family: var(--sans); line-height: 1.4; margin: 0; }
+
+  ul.tight, ol.tight { margin: 0 0 24px 24px; }
+  ul.tight li, ol.tight li { margin-bottom: 8px; }
+  li::marker { color: var(--accent); font-weight: 700; }
+
+  .callout { background: #eef2ff; border: 1px solid #c7d2fe; border-left: 5px solid #6366f1; border-radius: 10px; padding: 18px 22px; margin: 28px 0; font-family: var(--sans); font-size: 15px; }
+  .callout .tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #4338ca; display: block; margin-bottom: 6px; }
+
+  .code-wrap { background: var(--code-bg); border-radius: 12px; margin: 28px 0; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+  .code-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #1e293b; border-bottom: 1px solid #334155; font-family: var(--sans); font-size: 12px; color: #94a3b8; }
+  .code-head .dots { display: flex; gap: 6px; }
+  .code-head .dots i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+  pre { padding: 18px 20px; overflow-x: auto; }
+  code { font-family: var(--mono); font-size: 13.5px; line-height: 1.6; color: #e2e8f0; }
+  p code, li code { background: var(--accent-soft); color: #6b21a8; border: 1px solid #e9d5ff; border-radius: 4px; padding: 1px 6px; font-size: .85em; font-family: var(--mono); }
+  .tok-kw { color: #c084fc; }
+  .tok-str { color: #86efac; }
+  .tok-fn { color: #7dd3fc; }
+  .tok-cm { color: #64748b; font-style: italic; }
+
+  table.data { width: 100%; border-collapse: collapse; margin: 28px 0; font-family: var(--sans); font-size: 14px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  table.data thead { background: var(--accent-soft); }
+  table.data th { text-align: left; padding: 12px 16px; font-weight: 700; color: #3a2b52; border-bottom: 2px solid #d8c7f5; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  table.data td { padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.data tbody tr:nth-child(even) { background: #faf9fc; }
+  table.data tbody tr:hover { background: #f4f0fb; }
+  table.data td:first-child { font-weight: 700; }
+  table.data .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .tag-inline { display: inline-block; font-family: var(--sans); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .tag-green { background: #dcfce7; color: #166534; }
+  .tag-red { background: #fee2e2; color: #991b1b; }
+  .tag-amber { background: #fef3c7; color: #92400e; }
+
+  .share-row { display: flex; gap: 10px; align-items: center; padding: 20px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 40px 0; font-family: var(--sans); }
+  .share-row .lbl { font-size: 13px; color: var(--faint); font-weight: 600; }
+  .share-btn { font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); color: var(--soft); background: var(--paper); cursor: pointer; }
+  .share-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .author-box { display: flex; gap: 18px; align-items: center; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 22px; margin: 36px 0; font-family: var(--sans); box-shadow: 0 4px 14px rgba(0,0,0,.05); }
+  .author-box .avatar { width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #ff6b6b); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 22px; flex-shrink: 0; }
+  .author-box b { font-size: 16px; display: block; }
+  .author-box .role { color: var(--faint); font-size: 13px; margin: 2px 0 8px; }
+  .author-box p { font-size: 14px; color: var(--soft); line-height: 1.6; margin: 0; }
+
+  .related { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 32px 0; font-family: var(--sans); }
+  .related-card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .related-card .cat { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); }
+  .related-card h4 { font-size: 15px; font-weight: 700; margin: 8px 0; line-height: 1.4; }
+  .related-card span { font-size: 12px; color: var(--faint); }
+
+  .newsletter { background: var(--accent-soft); border-radius: 16px; padding: 32px; text-align: center; margin: 40px 0; font-family: var(--sans); border: 1px solid #e9d5ff; }
+  .newsletter h3 { font-size: 22px; margin-bottom: 8px; color: #3a2b52; }
+  .newsletter p { font-size: 14px; color: #6b21a8; margin-bottom: 16px; font-family: var(--sans); }
+  .newsletter form { display: flex; gap: 8px; max-width: 380px; margin: 0 auto; }
+  .newsletter input { flex: 1; padding: 10px 14px; border: 1px solid #d8c7f5; border-radius: 8px; font-size: 14px; outline: none; }
+  .newsletter button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer; }
+
+  footer.foot { border-top: 1px solid var(--line); margin-top: 48px; padding: 24px 0; font-family: var(--sans); font-size: 13px; color: var(--faint); display: flex; justify-content: space-between; align-items: center; }
+  footer.foot a { color: var(--soft); text-decoration: none; }
+  footer.foot a:hover { color: var(--accent); }
+
+  @media (max-width: 720px) {
+    h1.hed { font-size: 30px; }
+    .related { grid-template-columns: 1fr; }
+    .fig-float { float: none; width: 100%; margin: 16px 0; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="topbar-inner">
+      <span class="brand-sans">Design <em>Systems</em> Today</span>
+      <nav>
+        <a href="#">Articles</a>
+        <a href="#">Guides</a>
+        <a href="#">Podcast</a>
+        <a href="#">Library</a>
+      </nav>
+      <a class="cta" href="#">Subscribe</a>
+    </div>
+  </div>
+
+  <div class="article-wrap">
+
+    <div class="kicker">Typography &amp; Layout · 12 min read</div>
+    <h1 class="hed">The Art of the Long-Form Article: Designing for Deep Reading</h1>
+    <p class="dek">Why some pages hold attention for ten minutes while others bounce in ten seconds — and the craft behind building pages people actually finish.</p>
+
+    <div class="byline">
+      <div class="avatar">EN</div>
+      <div class="meta">
+        <b>Elena Novak</b>
+        <span>Staff Writer · Published Aug 2, 2026 · Updated Aug 2, 2026</span>
+      </div>
+    </div>
+
+    <p class="lede dropcap">Every publishing platform on the web competes for the same scarce resource: sustained attention. Long-form articles — the 2,000-word deep dives that readers bookmark and share — are a deliberate design problem, not just a writing one. The measure of success is a reader who scrolls to the end, and the typography, pacing, and structure of a page quietly decide that outcome.</p>
+
+    <h2>Why reading length matters</h2>
+    <p>Data across publishers is consistent: articles longer than 1,800 words that are <em>structured</em> outperform shorter pieces on both dwell time and conversion. But the structure is the catch. An unbroken wall of text fails. A page with <strong>clear hierarchy</strong>, generous measure, and breathing room thrives.</p>
+    <p>Consider these three metrics tracked by the <a href="#">Attention Research Group</a> across 240 content sites in 2026:</p>
+
+    <ul class="tight">
+      <li><strong>Time-to-finish</strong> — how long it takes a reader to reach the final paragraph.</li>
+      <li><strong>Mid-article abandonment</strong> — the drop-off cliff between the 30% and 60% scroll points.</li>
+      <li><strong>Signal-to-noise</strong> — the ratio of primary content to distraction elements per viewport.</li>
+    </ul>
+
+    <p>Pages that keep signal-to-noise above 80% retain readers 2.3× longer. That single number explains most of what follows in this article.</p>
+
+    <figure>
+      <img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 340'%3E%3Cdefs%3E%3ClinearGradient id='bg' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%231e1b4b'/%3E%3Cstop offset='1' stop-color='%23312e81'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='800' height='340' fill='url(%23bg)'/%3E%3Ctext x='40' y='60' fill='%23a5b4fc' font-size='18' font-family='sans-serif' font-weight='700'%3ERetention by article length (2026)%3C/text%3E%3Cpath d='M60 260 L740 260 M60 40 L60 260' stroke='%23494b8a' stroke-width='2'/%3E%3Cpolyline points='60,250 180,245 300,236 420,218 540,192 620,158 700,110 740,78' fill='none' stroke='%23818cf8' stroke-width='4'/%3E%3Ccircle cx='700' cy='110' r='6' fill='%23818cf8'/%3E%3Ctext x='600' y='84' fill='%23c7d2fe' font-size='14' font-family='sans-serif'%3E1,800-2,400 words peak%3C/text%3E%3Ctext x='60' y='288' fill='%236366f1' font-size='13' font-family='sans-serif'%3E500%3C/text%3E%3Ctext x='180' y='288' fill='%236366f1' font-size='13' font-family='sans-serif'%3E1,000%3C/text%3E%3Ctext x='300' y='288' fill='%236366f1' font-size='13' font-family='sans-serif'%3E1,500%3C/text%3E%3Ctext x='420' y='288' fill='%236366f1' font-size='13' font-family='sans-serif'%3E2,000%3C/text%3E%3Ctext x='540' y='288' fill='%236366f1' font-size='13' font-family='sans-serif'%3E2,500%3C/text%3E%3Ctext x='660' y='288' fill='%236366f1' font-size='13' font-family='sans-serif'%3E3,000%3C/text%3E%3C/svg%3E" alt="Retention chart by article length">
+      <figcaption>Chart: retained readers peak for structured articles in the 1,800–2,400 word range.</figcaption>
+    </figure>
+
+    <blockquote>
+      “A reader doesn't notice great typography. They notice when it's missing — that's when they leave.”
+      <cite>— Dr. Amara Whitfield, author of <em>Readable Interfaces</em></cite>
+    </blockquote>
+
+    <h2>Setting the measure</h2>
+    <p>The classic guidance remains correct: target <code>60–75 characters per line</code> for body copy. On a 1280px desktop container, that means a content column of roughly 640–720px. Everything wider and the eye has to travel too far between line ends; everything narrower and lines break awkwardly.</p>
+    <p>Line height compounds the effect. For serif body text at 18px, a <code>line-height</code> of <code>1.7–1.8</code> keeps readers from losing their place. That rhythm — consistent, predictable, unhurried — is what a comfortable reading surface feels like.</p>
+
+    <div class="pull-quote">
+      <div class="mark">“</div>
+      <p>The reader should never have to think about where the next line starts. That's the whole job of measure and leading.</p>
+    </div>
+
+    <h2>Hierarchy without shouting</h2>
+    <p>Strong articles create a visual outline the reader can skim. Our recommended toolkit, in order of subtlety:</p>
+
+    <ol class="tight">
+      <li><strong>Kickers</strong> — small-caps category labels that anchor the piece.</li>
+      <li><strong>Hed / dek</strong> — a bold headline supported by a summary sentence.</li>
+      <li><strong>Drop caps</strong> — used sparingly, only on the lede paragraph.</li>
+      <li><strong>Pull quotes</strong> — placed to break up long spans, never twice in one screen.</li>
+      <li><strong>Subheads</strong> — scannable signposts every 300–400 words.</li>
+    </ol>
+
+    <p>Notice that none of these are bigger type. Hierarchy via weight, color, and whitespace beats hierarchy via size alone, especially on small screens.</p>
+
+    <h3>A concrete example: code inline</h3>
+    <p>Technical articles mix prose and code constantly. The convention that works: inline code styled with a <em>subtle background chip</em> so it doesn't interrupt the reading line, and fenced blocks in a dark surface for longer samples.</p>
+
+    <div class="code-wrap">
+      <div class="code-head">
+        <span>typography-scale.css</span>
+        <span class="dots"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></span>
+      </div>
+      <pre><code><span class="tok-cm">/* Base measure for long-form content */</span>
+<span class="tok-kw">:root</span> {
+  --content-max: <span class="tok-fn">640px</span>;
+  --body-size: <span class="tok-fn">18px</span>;
+  --body-leading: <span class="tok-fn">1.75</span>;
+  --hed-size: <span class="tok-fn">clamp(28px, 5vw, 42px)</span>;
+}
+
+.article-body {
+  max-width: var(--content-max);
+  font-size: var(--body-size);
+  line-height: var(--body-leading);
+  font-family: Georgia, serif;
+}
+
+<span class="tok-kw">@media</span> (max-width: 720px) {
+  <span class="tok-kw">:root</span> { --content-max: <span class="tok-fn">100%</span>; }
+}</code></pre>
+    </div>
+
+    <div class="callout">
+      <span class="tag">Field note</span>
+      On mobile, the content column should go edge-to-edge (with 20px gutters) rather than mimicking the desktop column. Shrinking the column on a 375px phone makes text tiny for no benefit.
+    </div>
+
+    <h2>Tables and structured data</h2>
+    <p>Long-form pieces frequently need reference tables. The rules are simple: zebra striping for scanability, right-aligned numerals, and a hover state that helps the eye track across rows.</p>
+
+    <table class="data">
+      <thead>
+        <tr><th>Technique</th><th>Retention impact</th><th>Effort</th><th>Adoption</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Drop caps (lede only)</td><td>+6% finish rate</td><td class="num">Low</td><td><span class="tag-inline tag-green">84%</span></td></tr>
+        <tr><td>Pull quotes</td><td>+4% mid-article</td><td class="num">Low</td><td><span class="tag-inline tag-amber">61%</span></td></tr>
+        <tr><td>Subheads /400 words</td><td>+11% finish rate</td><td class="num">Medium</td><td><span class="tag-inline tag-green">77%</span></td></tr>
+        <tr><td>Table of contents</td><td>+3% finish rate</td><td class="num">Low</td><td><span class="tag-inline tag-amber">38%</span></td></tr>
+        <tr><td>Inline ads in body</td><td>−14% finish rate</td><td class="num">High</td><td><span class="tag-inline tag-red">52%</span></td></tr>
+      </tbody>
+    </table>
+
+    <p>Note the last row: monetization that interrupts reading has a measurable cost. The best publications isolate revenue outside the reading column entirely.</p>
+
+    <h2>Images that don't break flow</h2>
+    <p>Photographs and diagrams earn their place. The pattern below — a floated figure inside a long paragraph — keeps the reader moving while still illustrating the point.</p>
+
+    <figure class="fig-float">
+      <img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 240'%3E%3Crect width='320' height='240' fill='%23f8fafc'/%3E%3Crect x='16' y='16' width='288' height='208' fill='none' stroke='%23cbd5e1' stroke-width='2' rx='12'/%3E%3Ctext x='160' y='100' text-anchor='middle' fill='%2364748b' font-size='16' font-family='sans-serif'%3EReading column 640px%3C/text%3E%3Ctext x='160' y='126' text-anchor='middle' fill='%2394a3b8' font-size='13' font-family='sans-serif'%3Ewith floated figure at 320px%3C/text%3E%3Crect x='216' y='150' width='72' height='56' fill='%23a5b4fc' rx='8'/%3E%3Ctext x='252' y='183' text-anchor='middle' fill='%2343358a' font-size='12' font-family='sans-serif' font-weight='700'%3EFig.%3C/text%3E%3C/svg%3E" alt="Diagram showing floated figure layout">
+    </figure>
+
+    <p>Floated figures work because they create an <strong>asymmetric, magazine-like texture</strong> that reads as designed rather than templated. The float should be modest — 45–55% of the column width — and the surrounding copy should not be justified, which would create distracting rivers of whitespace around the figure.</p>
+
+    <p>When the viewport narrows below 720px, floats collapse to full-width and drop to the top of the next block. A reader on a phone never sees the two-column dance; they get a clean linear flow instead.</p>
+
+    <h2>Putting it all together</h2>
+    <p>The finished page is a system of small, consistent decisions: a 640px measure, a 1.75 leading, subheads every few hundred words, floats in moderation, code in chips, data in zebra tables. None of it is glamorous. All of it is what keeps a reader on the page for the ten minutes it takes to finish a 2,200-word piece.</p>
+
+    <p>Next time you build an article template, resist the urge to add more. The reader's attention is the scarce resource — design every pixel to protect it.</p>
+
+    <div class="share-row">
+      <span class="lbl">Share this article</span>
+      <button class="share-btn">𝕏 Twitter</button>
+      <button class="share-btn">LinkedIn</button>
+      <button class="share-btn">Copy link</button>
+    </div>
+
+    <div class="author-box">
+      <div class="avatar">EN</div>
+      <div>
+        <b>Elena Novak</b>
+        <div class="role">Staff Writer, Design Systems Today</div>
+        <p>Elena writes about typography, editorial design, and the craft of readable interfaces. Previously design lead at Meridian Publishing and a contributor to the Interaction Design Foundation.</p>
+      </div>
+    </div>
+
+    <h3 style="font-family:var(--sans);font-size:18px;">Related reading</h3>
+    <div class="related">
+      <div class="related-card">
+        <div class="cat">Typography</div>
+        <h4>Choosing a body face for the next decade</h4>
+        <span>9 min read · Aug 1, 2026</span>
+      </div>
+      <div class="related-card">
+        <div class="cat">Layout</div>
+        <h4>Grids that breathe: whitespace as structure</h4>
+        <span>7 min read · Jul 28, 2026</span>
+      </div>
+      <div class="related-card">
+        <div class="cat">Performance</div>
+        <h4>Why your article page weighs 4MB</h4>
+        <span>6 min read · Jul 25, 2026</span>
+      </div>
+    </div>
+
+    <div class="newsletter">
+      <h3>Never miss an article</h3>
+      <p>Join 40,000 designers getting one thoughtful essay each week.</p>
+      <form>
+        <input type="email" placeholder="you@example.com">
+        <button type="submit">Subscribe</button>
+      </form>
+    </div>
+
+    <footer class="foot">
+      <span>© 2026 Design Systems Today</span>
+      <span><a href="#">About</a> · <a href="#">RSS</a> · <a href="#">Privacy</a></span>
+    </footer>
+
+  </div>
+</body>
+</html>

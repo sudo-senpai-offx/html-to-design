@@ -44,3 +44,11 @@ coverage/
 # Misc
 *.pem
 *.key
+
+# Local tooling
+.cursor/
+
+# Runtime outputs
+shared-output/
+.figma-resume/
+backend/tests/output/

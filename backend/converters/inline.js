@@ -4,7 +4,7 @@ var { splitAndInlineHtml, DEFAULT_MAX_BYTES } = require("../lib/html-splitter");
 var { inlineCssStyles, inlineExternalStylesheets } = require("../lib/css-inliner");
 var { getTempPath, ensureTempDir, removeTempFile } = require("../lib/temp-dir");
 
-var CHUNK_MAX_BYTES = 100 * 1024; /* 100KB */
+var CHUNK_MAX_BYTES = require("../lib/config").getConfig("inline").maxBatchBytes;
 
 async function convertToInlineHtml(html, options) {
   var jobId = options && options.jobId;
@@ -73,17 +73,10 @@ async function convertToInlineHtml(html, options) {
     });
   }
 
-  /* Write full combined HTML for convenience */
-  var combinedHtml = "";
+  /* Write full combined HTML for convenience (body content of each chunk) */
   var chunkHead = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<style>\n/* Combined inline chunks from " + chunks.length + " chunk(s) */\n</style>\n</head>\n<body>\n";
   var chunkTail = "\n</body>\n</html>";
-  for (var ci2 = 0; ci2 < chunks.length; ci2++) {
-    var ch2 = chunks[ci2];
-    combinedHtml += "<!-- Chunk " + (ci2 + 1) + "/" + chunks.length + " -->\n";
-    combinedHtml += ch2._html || ch2.html;
-  }
-  /* Extract body content from each chunk */
-  combinedHtml = chunkHead;
+  var combinedHtml = chunkHead;
   for (var ci3 = 0; ci3 < chunks.length; ci3++) {
     var ch3 = chunks[ci3];
     combinedHtml += "<!-- Chunk " + (ci3 + 1) + "/" + chunks.length + " -->\n";

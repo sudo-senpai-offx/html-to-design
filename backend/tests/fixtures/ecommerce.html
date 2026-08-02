@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Northwind Store — Premium Outdoor Gear</title>
+<style>
+  :root {
+    --primary: #1a5d3a;
+    --primary-dark: #12452b;
+    --primary-light: #e6f0ea;
+    --accent: #d97706;
+    --accent-light: #fef3c7;
+    --ink: #1c1917;
+    --ink-muted: #57534e;
+    --line: #e7e5e4;
+    --bg: #fafaf9;
+    --white: #ffffff;
+    --radius-lg: 20px;
+    --radius-md: 12px;
+    --radius-sm: 8px;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.06), 0 1px 3px rgba(0,0,0,.1);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -2px rgba(0,0,0,.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -4px rgba(0,0,0,.08);
+    --shadow-xl: 0 20px 25px -5px rgba(0,0,0,.1), 0 8px 10px -6px rgba(0,0,0,.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .announcement-bar {
+    background: linear-gradient(90deg, var(--primary-dark), var(--primary) 50%, var(--accent));
+    color: #fff;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    padding: 8px 16px;
+  }
+
+  .announcement-bar a { color: #fde68a; text-decoration: none; }
+  .announcement-bar a:hover { text-decoration: underline; }
+
+  header.nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(255,255,255,.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .nav-inner {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+  }
+
+  .logo { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 800; color: var(--primary); }
+  .logo svg { width: 28px; height: 28px; }
+  .logo span b { color: var(--accent); }
+
+  nav.links { display: flex; gap: 24px; flex: 1; }
+  nav.links a { color: var(--ink-muted); text-decoration: none; font-size: 14px; font-weight: 500; }
+  nav.links a:hover { color: var(--primary); }
+  nav.links a.active { color: var(--primary); font-weight: 600; }
+
+  .search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f5f5f4;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 8px 16px;
+    width: 260px;
+  }
+  .search-box input { border: none; outline: none; background: transparent; flex: 1; font-size: 14px; color: var(--ink); }
+  .search-box svg { width: 16px; height: 16px; color: var(--ink-muted); }
+
+  .cart-btn {
+    position: relative;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .cart-btn .badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #fff;
+  }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 0 24px 80px; }
+
+  .hero {
+    margin: 28px 0 48px;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    position: relative;
+    background: radial-gradient(1200px 400px at 80% -20%, rgba(217,119,6,.25), transparent 60%),
+                linear-gradient(135deg, #0f3d27, #166534 55%, #1a5d3a);
+    color: #fff;
+    min-height: 480px;
+    display: flex;
+    align-items: center;
+    box-shadow: var(--shadow-xl);
+  }
+
+  .hero-content { padding: 56px 56px; max-width: 620px; position: relative; z-index: 2; }
+  .hero-eyebrow {
+    display: inline-block;
+    background: rgba(255,255,255,.15);
+    border: 1px solid rgba(255,255,255,.25);
+    color: #fde68a;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 6px 14px;
+    border-radius: 999px;
+    margin-bottom: 20px;
+  }
+  .hero h1 { font-size: 48px; font-weight: 800; line-height: 1.1; letter-spacing: -.02em; margin-bottom: 16px; }
+  .hero p { font-size: 17px; color: rgba(255,255,255,.85); margin-bottom: 28px; max-width: 480px; }
+
+  .hero-cta { display: flex; gap: 12px; align-items: center; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 12px 24px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 4px 14px rgba(217,119,6,.4); }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(217,119,6,.5); }
+  .btn-ghost { background: transparent; color: #fff; border: 1.5px solid rgba(255,255,255,.4); }
+
+  .hero-stats { display: flex; gap: 40px; margin-top: 40px; }
+  .hero-stat b { font-size: 28px; font-weight: 800; display: block; }
+  .hero-stat span { font-size: 13px; color: rgba(255,255,255,.7); }
+
+  .hero-art {
+    position: absolute;
+    right: -40px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 520px;
+    height: 520px;
+    z-index: 1;
+    opacity: .9;
+  }
+  .hero-art img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 20px 40px rgba(0,0,0,.35)); }
+
+  .badge-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+  .badge-row .badge {
+    background: var(--white);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .section { margin-bottom: 64px; }
+  .section-head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; }
+  .section-head h2 { font-size: 28px; font-weight: 800; letter-spacing: -.01em; }
+  .section-head p { color: var(--ink-muted); font-size: 15px; margin-top: 4px; }
+  .section-link { color: var(--primary); font-size: 14px; font-weight: 600; text-decoration: none; }
+
+  .feature-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .feature-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 24px;
+    box-shadow: var(--shadow-sm);
+  }
+  .feature-card .icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 16px;
+    background: var(--primary-light);
+    color: var(--primary);
+  }
+  .feature-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+  .feature-card p { font-size: 14px; color: var(--ink-muted); line-height: 1.5; }
+
+  .product-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+  .product-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .product-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+  .product-thumb {
+    position: relative;
+    height: 220px;
+    background: linear-gradient(160deg, #f1f5f9, #e2e8f0);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .product-thumb img { max-width: 80%; max-height: 80%; object-fit: contain; }
+  .product-tag {
+    position: absolute;
+    top: 12px; left: 12px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    padding: 4px 10px;
+    border-radius: 999px;
+  }
+  .product-tag.sale { background: #dc2626; }
+  .product-body { padding: 16px 16px 20px; }
+  .product-rating { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-muted); margin-bottom: 6px; }
+  .stars { color: #f59e0b; letter-spacing: 1px; }
+  .product-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .product-cat { font-size: 12px; color: var(--ink-muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: .05em; }
+  .product-price { display: flex; align-items: center; gap: 8px; }
+  .price { font-size: 18px; font-weight: 800; color: var(--primary); }
+  .price-old { font-size: 14px; color: #a8a29e; text-decoration: line-through; }
+
+  .deal-banner {
+    border-radius: var(--radius-lg);
+    background: linear-gradient(120deg, #7c2d12, #c2410c, #ea580c);
+    color: #fff;
+    padding: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .deal-banner::after {
+    content: "";
+    position: absolute;
+    right: -80px; top: -80px;
+    width: 280px; height: 280px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.08);
+  }
+  .deal-banner h2 { font-size: 32px; font-weight: 800; margin-bottom: 8px; }
+  .deal-banner p { color: rgba(255,255,255,.85); max-width: 420px; margin-bottom: 20px; }
+  .deal-banner .btn-primary { background: #fff; color: #7c2d12; box-shadow: none; }
+  .countdown { display: flex; gap: 12px; }
+  .countdown .cell {
+    background: rgba(255,255,255,.15);
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    text-align: center;
+    min-width: 64px;
+  }
+  .countdown .cell b { font-size: 24px; font-weight: 800; display: block; }
+  .countdown .cell span { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: rgba(255,255,255,.75); }
+
+  .testimonials { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .testimonial {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 28px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .testimonial .quote { font-size: 15px; color: var(--ink); font-style: italic; line-height: 1.6; }
+  .testimonial .person { display: flex; align-items: center; gap: 12px; margin-top: auto; }
+  .avatar {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; color: #fff;
+    font-size: 16px;
+  }
+  .testimonial .person b { display: block; font-size: 14px; }
+  .testimonial .person span { font-size: 12px; color: var(--ink-muted); }
+
+  .brands {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 24px 8px;
+    opacity: .55;
+    filter: grayscale(1);
+  }
+  .brands span { font-size: 22px; font-weight: 800; color: var(--ink); letter-spacing: -.01em; }
+
+  .newsletter {
+    background: var(--primary-light);
+    border: 1px solid #d7e7dd;
+    border-radius: var(--radius-lg);
+    padding: 40px;
+    text-align: center;
+  }
+  .newsletter h2 { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
+  .newsletter p { color: var(--ink-muted); margin-bottom: 20px; }
+  .newsletter-form {
+    display: flex;
+    gap: 8px;
+    max-width: 420px;
+    margin: 0 auto;
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px;
+    box-shadow: var(--shadow-md);
+  }
+  .newsletter-form input { flex: 1; border: none; outline: none; padding: 8px 16px; font-size: 14px; background: transparent; }
+  .newsletter-form .btn { background: var(--primary); color: #fff; border-radius: 999px; }
+
+  .faq-item {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 20px 24px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+  .faq-q { font-size: 16px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+  .faq-a { margin-top: 12px; font-size: 14px; color: var(--ink-muted); }
+
+  footer { background: var(--ink); color: #d6d3d1; }
+  .footer-inner {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 48px 24px 32px;
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 40px;
+  }
+  footer h4 { color: #fff; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 16px; }
+  footer ul { list-style: none; }
+  footer li { margin-bottom: 10px; }
+  footer a { color: #a8a29e; text-decoration: none; font-size: 14px; }
+  footer a:hover { color: #fff; }
+  .footer-brand p { font-size: 14px; color: #a8a29e; margin-top: 12px; max-width: 280px; }
+  .social { display: flex; gap: 12px; margin-top: 20px; }
+  .social .dot {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.1);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+  }
+  .footer-bottom {
+    border-top: 1px solid rgba(255,255,255,.1);
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 20px 24px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #78716c;
+  }
+
+  @media (max-width: 1024px) {
+    .feature-grid, .product-grid { grid-template-columns: repeat(2, 1fr); }
+    .testimonials { grid-template-columns: 1fr; }
+    .footer-inner { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 640px) {
+    .feature-grid, .product-grid { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 32px; }
+    .hero-art { display: none; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="announcement-bar">
+    Free shipping on orders over $75 &nbsp;·&nbsp; <a href="#">Code: TRAILBLAZER</a> &nbsp;·&nbsp; 30-day returns
+  </div>
+
+  <header class="nav">
+    <div class="nav-inner">
+      <div class="logo">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M16 2C8.5 2 2.5 8 2.5 15.5 2.5 24 16 30 16 30s13.5-6 13.5-14.5C29.5 8 23.5 2 16 2z" fill="#1a5d3a"/>
+          <path d="M16 10c-3.3 0-6 2.7-6 6s2.7 6 6 6 6-2.7 6-6-2.7-6-6-6z" fill="#d97706"/>
+        </svg>
+        <span>North<b>wind</b></span>
+      </div>
+      <nav class="links">
+        <a href="#" class="active">Shop</a>
+        <a href="#">New Arrivals</a>
+        <a href="#">Camping</a>
+        <a href="#">Hiking</a>
+        <a href="#">Climbing</a>
+        <a href="#">Sale</a>
+      </nav>
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="text" placeholder="Search gear...">
+      </div>
+      <button class="cart-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+        <span class="badge">3</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+
+    <section class="hero">
+      <div class="hero-content">
+        <span class="hero-eyebrow">Winter Clearance — up to 40% off</span>
+        <h1>Gear that takes you further.</h1>
+        <p>From summit trails to starlit campsites, our expedition-tested equipment keeps you moving with confidence in every season.</p>
+        <div class="hero-cta">
+          <a href="#" class="btn btn-primary">Shop the sale →</a>
+          <a href="#" class="btn btn-ghost">Explore new gear</a>
+        </div>
+        <div class="hero-stats">
+          <div class="hero-stat"><b>120k+</b><span>Happy customers</span></div>
+          <div class="hero-stat"><b>4.9/5</b><span>Average rating</span></div>
+          <div class="hero-stat"><b>Free</b><span>Shipping over $75</span></div>
+        </div>
+      </div>
+      <div class="hero-art">
+        <img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f97316'/%3E%3Cstop offset='1' stop-color='%23dc2626'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M200 20 L260 120 L200 360 L140 120 Z' fill='url(%23g)'/%3E%3Ccircle cx='200' cy='80' r='24' fill='%23fde68a'/%3E%3Cpath d='M200 360 L160 300 L240 300 Z' fill='%23b91c1c'/%3E%3C/svg%3E" alt="Mountain illustration">
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="badge-row">
+        <span class="badge">✔ Same-day dispatch</span>
+        <span class="badge">✔ Lifetime warranty</span>
+        <span class="badge">✔ Carbon-neutral delivery</span>
+        <span class="badge">✔ 30-day free returns</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h2>Why outdoor lovers choose us</h2>
+          <p>Everything you need for the trail, tested in the field.</p>
+        </div>
+      </div>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="icon">🏔️</div>
+          <h3>Field-tested gear</h3>
+          <p>Every product survives 500+ hours of real-world testing before it earns a spot on our shelves.</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon">🌱</div>
+          <h3>Sustainable materials</h3>
+          <p>Recycled fabrics and bluesign-approved manufacturing across 90% of our catalog.</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon">🚚</div>
+          <h3>Free fast shipping</h3>
+          <p>Free 2-day shipping on orders over $75, with carbon-offset delivery on every parcel.</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon">🛠️</div>
+          <h3>Lifetime warranty</h3>
+          <p>If your gear fails in the field, we repair or replace it — no questions, for life.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h2>Best sellers</h2>
+          <p>Our most-loved gear, ready for the trail.</p>
+        </div>
+        <a href="#" class="section-link">View all products →</a>
+      </div>
+      <div class="product-grid">
+        <div class="product-card">
+          <div class="product-thumb">
+            <span class="product-tag">Bestseller</span>
+            <img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23eef2ff'/%3E%3Cpath d='M60 70 q40 -40 80 0 v60 q-40 40 -80 0 z' fill='%234f46e5'/%3E%3Cpath d='M60 70 q40 -40 80 0' fill='none' stroke='%23a5b4fc' stroke-width='4'/%3E%3C/svg%3E" alt="Trail Runner 40 pack">
+          </div>
+          <div class="product-body">
+            <div class="product-rating"><span class="stars">★★★★★</span> 4.9 · 1,204 reviews</div>
+            <div class="product-name">Trail Runner 40L Backpack</div>
+            <div class="product-cat">Backpacks</div>
+            <div class="product-price"><span class="price">$189</span><span class="price-old">$229</span></div>
+          </div>
+        </div>
+        <div class="product-card">
+          <div class="product-thumb">
+            <span class="product-tag sale">-25%</span>
+            <img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23fff7ed'/%3E%3Cpath d='M70 60 a30 30 0 0 1 60 0 c0 40 -30 50 -30 90 a30 30 0 0 1 -60 0 c0 -40 30 -50 30 -90' fill='%23ea580c'/%3E%3C/svg%3E" alt="Summit Down Jacket">
+          </div>
+          <div class="product-body">
+            <div class="product-rating"><span class="stars">★★★★☆</span> 4.7 · 863 reviews</div>
+            <div class="product-name">Summit 800-Fill Down Jacket</div>
+            <div class="product-cat">Jackets</div>
+            <div class="product-price"><span class="price">$249</span><span class="price-old">$332</span></div>
+          </div>
+        </div>
+        <div class="product-card">
+          <div class="product-thumb">
+            <img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23f0fdf4'/%3E%3Cpath d='M100 50 l50 30 v40 l-50 30 l-50 -30 v-40 z' fill='none' stroke='%2316a34a' stroke-width='6'/%3E%3Cline x1='100' y1='50' x2='100' y2='150' stroke='%2316a34a' stroke-width='6'/%3E%3C/svg%3E" alt="Alpine Titanium Stove">
+          </div>
+          <div class="product-body">
+            <div class="product-rating"><span class="stars">★★★★★</span> 5.0 · 512 reviews</div>
+            <div class="product-name">Alpine Titanium Stove Kit</div>
+            <div class="product-cat">Cooking</div>
+            <div class="product-price"><span class="price">$96</span></div>
+          </div>
+        </div>
+        <div class="product-card">
+          <div class="product-thumb">
+            <span class="product-tag">New</span>
+            <img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23fefce8'/%3E%3Ccircle cx='100' cy='100' r='46' fill='%23ca8a04'/%3E%3Ccircle cx='100' cy='100' r='30' fill='%23fef9c3'/%3E%3Ccircle cx='100' cy='100' r='12' fill='%2365400d'/%3E%3C/svg%3E" alt="Signal 3P Tent">
+          </div>
+          <div class="product-body">
+            <div class="product-rating"><span class="stars">★★★★☆</span> 4.6 · 388 reviews</div>
+            <div class="product-name">Signal 3-Person Dome Tent</div>
+            <div class="product-cat">Shelter</div>
+            <div class="product-price"><span class="price">$279</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="deal-banner">
+        <div>
+          <h2>Winter Blowout ends soon</h2>
+          <p>Save up to 40% on jackets, sleeping bags and camp stoves. Members get an extra 10% off.</p>
+          <div class="countdown">
+            <div class="cell"><b>02</b><span>Days</span></div>
+            <div class="cell"><b>14</b><span>Hrs</span></div>
+            <div class="cell"><b>32</b><span>Min</span></div>
+            <div class="cell"><b>09</b><span>Sec</span></div>
+          </div>
+        </div>
+        <a href="#" class="btn btn-primary">Claim deal</a>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h2>Loved by the community</h2>
+          <p>Real stories from the trail.</p>
+        </div>
+      </div>
+      <div class="testimonials">
+        <div class="testimonial">
+          <div class="product-rating"><span class="stars">★★★★★</span></div>
+          <p class="quote">“The Trail Runner pack survived a full PCT section hike. Waterproof, comfortable, and the hip belt pockets are genius. Best gear purchase I've made.”</p>
+          <div class="person">
+            <div class="avatar" style="background:#4f46e5;">MK</div>
+            <div><b>Maya K.</b><span>Pacific Crest Trail · 2025</span></div>
+          </div>
+        </div>
+        <div class="testimonial">
+          <div class="product-rating"><span class="stars">★★★★★</span></div>
+          <p class="quote">“Summit jacket is ridiculously warm for its weight. Stuffable to the size of a grapefruit. The 30-day return policy convinced me to try it — I kept it.”</p>
+          <div class="person">
+            <div class="avatar" style="background:#059669;">JT</div>
+            <div><b>James T.</b><span>Alpine climber · 2025</span></div>
+          </div>
+        </div>
+        <div class="testimonial">
+          <div class="product-rating"><span class="stars">★★★★★</span></div>
+          <p class="quote">“Ordered Friday night, arrived Monday. Everything in the box was exactly as described and the stove boils water in under 3 minutes at altitude.”</p>
+          <div class="person">
+            <div class="avatar" style="background:#d97706;">SR</div>
+            <div><b>Sofia R.</b><span>Weekend camper · 2025</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="brands">
+        <span>VANGUARD</span>
+        <span>PeakWorks</span>
+        <span>ALPINE CO.</span>
+        <span>Ridge &amp; Pine</span>
+        <span>BoulderGear</span>
+        <span>Northsky</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h2>Frequently asked questions</h2>
+          <p>Quick answers before you hit the trail.</p>
+        </div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">How does the lifetime warranty work? <span style="color:var(--accent)">＋</span></div>
+        <div class="faq-a">If any product fails due to manufacturing defects or normal wear during your lifetime, we repair or replace it free of charge. Just start a return on our support page and include photos.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">What's your return policy? <span style="color:var(--accent)">＋</span></div>
+        <div class="faq-a">Unused items can be returned within 30 days for a full refund. Used items can be returned within 30 days for store credit. Returns are free for members.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Do you ship internationally? <span style="color:var(--accent)">＋</span></div>
+        <div class="faq-a">We ship to 40+ countries. Duties are calculated at checkout, and orders over $150 ship free worldwide during our seasonal sales.</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="newsletter">
+        <h2>Get 15% off your first order</h2>
+        <p>Join 80,000+ subscribers for early access to sales, trail guides and gear drops.</p>
+        <form class="newsletter-form">
+          <input type="email" placeholder="Enter your email address">
+          <button class="btn" type="submit">Subscribe</button>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="logo" style="color:#fff;">
+          <svg viewBox="0 0 32 32" fill="none" width="28" height="28">
+            <path d="M16 2C8.5 2 2.5 8 2.5 15.5 2.5 24 16 30 16 30s13.5-6 13.5-14.5C29.5 8 23.5 2 16 2z" fill="#1a5d3a"/>
+            <path d="M16 10c-3.3 0-6 2.7-6 6s2.7 6 6 6 6-2.7 6-6-2.7-6-6-6z" fill="#d97706"/>
+          </svg>
+          <span>North<b style="color:var(--accent)">wind</b></span>
+        </div>
+        <p>Expedition-tested outdoor gear designed for the long haul. Backed by a lifetime warranty.</p>
+        <div class="social">
+          <span class="dot">f</span>
+          <span class="dot">📷</span>
+          <span class="dot">▶</span>
+          <span class="dot">𝕏</span>
+        </div>
+      </div>
+      <div>
+        <h4>Shop</h4>
+        <ul>
+          <li><a href="#">New Arrivals</a></li>
+          <li><a href="#">Backpacks</a></li>
+          <li><a href="#">Jackets</a></li>
+          <li><a href="#">Tents</a></li>
+          <li><a href="#">Cooking</a></li>
+          <li><a href="#">Gift Cards</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Support</h4>
+        <ul>
+          <li><a href="#">Help Center</a></li>
+          <li><a href="#">Track Order</a></li>
+          <li><a href="#">Returns</a></li>
+          <li><a href="#">Size Charts</a></li>
+          <li><a href="#">Contact Us</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="#">Our Story</a></li>
+          <li><a href="#">Sustainability</a></li>
+          <li><a href="#">Careers</a></li>
+          <li><a href="#">Press</a></li>
+          <li><a href="#">Affiliates</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Northwind Supply Co. All rights reserved.</span>
+      <span>Privacy · Terms · Accessibility</span>
+    </div>
+  </footer>
+
+</body>
+</html>

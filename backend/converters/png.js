@@ -1,4 +1,5 @@
 const { getPool } = require("../lib/browser-pool");
+const { resolveFormatOptions } = require("../lib/config");
 
 function getImageLoadPromise(page) {
   return page.evaluate(() => {
@@ -22,14 +23,15 @@ function getImageLoadPromise(page) {
 }
 
 async function convertToPng(html, options) {
+  var cfg = resolveFormatOptions("png", options);
   var {
-    width = 1440,
-    height = 900,
-    scale = 2,
-    fullPage = true,
-    transparent = false,
-    maxHeight = 16384,
-    clipHeight,
+    width = cfg.width,
+    height = cfg.height,
+    scale = cfg.scale,
+    fullPage = cfg.fullPage,
+    transparent = cfg.transparent,
+    maxHeight = cfg.maxHeight,
+    clipHeight = cfg.clipHeight,
   } = options || {};
 
   var pool = getPool();
@@ -57,11 +59,19 @@ async function convertToPng(html, options) {
     }
 
     if (fullPage && !clipHeight) {
+      if (fullH <= maxHeight) {
+        return page.screenshot({
+          type: "png",
+          fullPage: true,
+          omitBackground: transparent,
+        });
+      }
+      /* Full page exceeds maxHeight — fall back to clipped capture */
       return page.screenshot({
         type: "png",
-        fullPage: true,
+        fullPage: false,
         omitBackground: transparent,
-        clip: { x: 0, y: 0, width: width, height: Math.min(fullH, maxHeight) },
+        clip: { x: 0, y: 0, width: width, height: maxHeight },
       });
     }
 

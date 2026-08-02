@@ -1,10 +1,30 @@
 const { getPool } = require("../lib/browser-pool");
+const { resolveFormatOptions } = require("../lib/config");
 
-/* Print CSS that preserves all styling (shadows, backgrounds, colors) */
-var PRINT_CSS = `
+var PAGE_SIZES = {
+  A3: "297mm 420mm",
+  A4: "210mm 297mm",
+  A5: "148mm 210mm",
+  Legal: "8.5in 14in",
+  Letter: "8.5in 11in",
+  Tabloid: "11in 17in",
+};
+
+/* Print CSS that preserves all styling (shadows, backgrounds, colors).
+ * The @page rule is built to match the requested format/landscape/margin so
+ * that page.pdf({ format, landscape, margin }) stays consistent with the CSS
+ * page size (preferCSSPageSize: true would otherwise let a hardcoded A4 rule
+ * silently override the caller's format choice). */
+function buildPrintCss(format, landscape, margin) {
+  var size = PAGE_SIZES[format] || PAGE_SIZES.A4;
+  if (landscape) {
+    var dims = size.split(" ");
+    size = dims[1] + " " + dims[0];
+  }
+  return `
 @page {
-  size: A4;
-  margin: 15mm;
+  size: ${size};
+  margin: ${margin};
 }
 @media print {
   body {
@@ -31,9 +51,10 @@ var PRINT_CSS = `
   }
 }
 `;
+}
 
-function injectPrintCss(html) {
-  var styleTag = '<style>' + PRINT_CSS + '</style>';
+function injectPrintCss(html, format, landscape, margin) {
+  var styleTag = '<style>' + buildPrintCss(format, landscape, margin) + '</style>';
   if (html.indexOf("</head>") >= 0) {
     return html.replace("</head>", styleTag + "</head>");
   }
@@ -41,15 +62,16 @@ function injectPrintCss(html) {
 }
 
 async function convertToPdf(html, options) {
+  var cfg = resolveFormatOptions("pdf", options);
   var {
-    width = 1440,
-    height = 900,
-    scale = 2,
-    format = "A4",
-    landscape = false,
-    printBackground = true,
-    headerFooter = true,
-    margin = "15mm",
+    width = cfg.width,
+    height = cfg.height,
+    scale = cfg.scale,
+    format = cfg.pdf.format,
+    landscape = cfg.pdf.landscape,
+    printBackground = cfg.pdf.printBackground,
+    headerFooter = cfg.pdf.headerFooter,
+    margin = cfg.pdf.margin,
   } = options || {};
 
   var pool = getPool();
@@ -57,7 +79,7 @@ async function convertToPdf(html, options) {
   return pool.execute(async (page) => {
     await page.setViewport({ width, height, deviceScaleFactor: scale });
 
-    var modifiedHtml = injectPrintCss(html);
+    var modifiedHtml = injectPrintCss(html, format, landscape, margin);
     await page.setContent(modifiedHtml, { waitUntil: "networkidle2", timeout: 30000 });
 
     await page.evaluate(() => document.fonts && document.fonts.ready);

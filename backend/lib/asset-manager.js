@@ -43,7 +43,13 @@ class AssetManager {
     var lastErr = null;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        var buf = await this.fetchUrl(url);
+        var buf;
+        if (url.startsWith("data:")) {
+          buf = this.fetchDataUri(url);
+        } else {
+          buf = await this.fetchUrl(url);
+        }
+        if (!buf || buf.length === 0) throw new Error("Empty response");
         fs.writeFileSync(cachePath, buf);
         var hash = computeSHA1(buf);
         var hashBytes = computeSHA1Bytes(buf);
@@ -63,12 +69,30 @@ class AssetManager {
     return null;
   }
 
+  fetchDataUri(url) {
+    /* data:[<mediatype>][;base64],<data> */
+    var comma = url.indexOf(",");
+    if (comma < 0) throw new Error("Malformed data URI");
+    var meta = url.slice(5, comma);
+    var data = url.slice(comma + 1);
+    if (/;base64$/i.test(meta)) {
+      return Buffer.from(data, "base64");
+    }
+    /* URL-encoded (e.g. data:image/svg+xml;utf8,...) */
+    try {
+      return Buffer.from(decodeURIComponent(data), "utf-8");
+    } catch (e) {
+      return Buffer.from(data, "utf-8");
+    }
+  }
+
   fetchUrl(url, redirectCount) {
     redirectCount = redirectCount || 0;
     if (redirectCount > 5) {
       return Promise.reject(new Error("Too many redirects"));
     }
     var self = this;
+    var MAX_BYTES = 20 * 1024 * 1024;
     return new Promise(function(resolve, reject) {
       var mod = url.startsWith("https") ? https : http;
       var req = mod.get(url, {
@@ -91,8 +115,22 @@ class AssetManager {
           res.resume();
           return reject(new Error("HTTP " + res.statusCode));
         }
+        var declaredLength = parseInt(res.headers["content-length"], 10);
+        if (declaredLength && declaredLength > MAX_BYTES) {
+          res.resume();
+          return reject(new Error("Response too large (" + declaredLength + " bytes)"));
+        }
         var chunks = [];
-        res.on("data", function(c) { chunks.push(c); });
+        var total = 0;
+        res.on("data", function(c) {
+          total += c.length;
+          if (total > MAX_BYTES) {
+            res.destroy();
+            reject(new Error("Download exceeded " + MAX_BYTES + " bytes"));
+            return;
+          }
+          chunks.push(c);
+        });
         res.on("end", function() { resolve(Buffer.concat(chunks)); });
         res.on("error", reject);
       });

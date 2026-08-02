@@ -1,5 +1,14 @@
-const { writePsdBuffer, Compression } = require("ag-psd");
-const { createCanvas } = require("canvas");
+const { writePsdBuffer, Compression, initializeCanvas } = require("ag-psd");
+const canvasModule = require("canvas");
+const { createCanvas } = canvasModule;
+const { resolveFormatOptions } = require("../lib/config");
+
+/* ag-psd renders thumbnails/previews via node-canvas — must wire it up once */
+try {
+  initializeCanvas(canvasModule.createCanvas);
+} catch (e) {
+  console.error("  PSD: initializeCanvas failed:", e.message);
+}
 const { getPool } = require("../lib/browser-pool");
 
 function parseColor(str) {
@@ -137,9 +146,11 @@ async function renderLayerToCanvas(layer, page, pageWidth, pageHeight, scale) {
 }
 
 async function convertToPsd(html, options) {
-  var width = (options && options.width) || 1440;
-  var height = (options && options.height) || 900;
-  var scale = (options && options.scale) || 2;
+  var cfg = resolveFormatOptions("psd", options);
+  var width = cfg.width;
+  var height = cfg.height;
+  var scale = cfg.scale;
+  var maxElements = cfg.maxElements;
   var pool = getPool();
 
   var fullPageCanvas = await pool.execute(async (page) => {
@@ -172,15 +183,16 @@ async function convertToPsd(html, options) {
       await page.evaluate(function() { return document.fonts && document.fonts.ready; });
       await new Promise(function(r) { setTimeout(r, 500); });
 
-      var domTree = await page.evaluate(function() {
-        var MAX_ELEMENTS = 25000;
+      var domTree = await page.evaluate(function(maxElems) {
+        var MAX_ELEMENTS = maxElems || 25000;
         var elementCount = 0;
         function getCS(el) {
           var cs = window.getComputedStyle(el);
           var props = {};
           var important = [
-            "display","visibility","opacity","position",
-            "background-color","background","border-radius",
+            "display","visibility","opacity","position","z-index",
+            "background-color","background-image","background-size","background-position","background-repeat","background",
+            "border-radius",
             "border-top-width","border-top-color","border-right-width","border-right-color",
             "border-bottom-width","border-bottom-color","border-left-width","border-left-color",
             "border-top-style","border-right-style","border-bottom-style","border-left-style",
@@ -220,6 +232,8 @@ async function convertToPsd(html, options) {
           }
 
           elementCount++;
+          var bgImageVal = (props["background-image"] || "").trim();
+          if (bgImageVal === "none" || bgImageVal === "") bgImageVal = "";
           return {
             tag: tag,
             cls: typeof el.className === "string" ? el.className : "",
@@ -232,12 +246,12 @@ async function convertToPsd(html, options) {
             children: children,
             src: tag === "img" ? (el.currentSrc || el.src || "") : "",
             alt: el.alt || "",
-            bgImage: "",
+            bgImage: bgImageVal,
           };
         }
 
         return walk(document.body, 0);
-      });
+      }, maxElements);
 
       return domTree;
     }, { timeout: 30000, retries: 2 });
@@ -254,110 +268,24 @@ async function convertToPsd(html, options) {
 
   var elementRenderings = [];
   if (selectorLayers.length > 0) {
+    /* Slice each layer's pixels straight from the full-page screenshot —
+     * fast and pixel-accurate (no per-layer iframe re-rendering). */
     try {
-      var layerArgs = selectorLayers.map(function(l) {
-        return { selector: l.selector, w: l.w, h: l.h, x: l.x, y: l.y };
-      });
-      elementRenderings = await pool.execute(async function(page) {
-        await page.setViewport({ width: width, height: height, deviceScaleFactor: 1 });
-        await page.setContent(html, { waitUntil: "networkidle2", timeout: 30000 });
-        await new Promise(function(r) { setTimeout(r, 500); });
-        var results = await page.evaluate(function(layers) {
-          return Promise.all(layers.map(function(layer) {
-            return new Promise(function(resolve) {
-              var el = document.querySelector(layer.selector);
-              if (!el) { resolve(null); return; }
-              try {
-                var canvas = document.createElement("canvas");
-                var dpr = window.devicePixelRatio || 1;
-                canvas.width = Math.round(layer.w * dpr);
-                canvas.height = Math.round(layer.h * dpr);
-                var ctx = canvas.getContext("2d");
-                ctx.scale(dpr, dpr);
-
-                var clone = el.cloneNode(true);
-                clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
-                var styles = [];
-                var walk2 = clone;
-                var origWalk = el;
-                var stack = [[walk2, origWalk]];
-                while (stack.length > 0) {
-                  var pair = stack.pop();
-                  var c2 = pair[0], o = pair[1];
-                  var cs = window.getComputedStyle(o);
-                  var s = [];
-                  for (var i = 0; i < cs.length; i++) {
-                    var prop = cs[i];
-                    s.push(prop + ":" + cs.getPropertyValue(prop));
-                  }
-                  c2.style.cssText = s.join(";");
-                  var ci2 = c2.children, oi2 = o.children;
-                  for (var j = 0; j < ci2.length && j < oi2.length; j++) {
-                    stack.push([ci2[j], oi2[j]]);
-                  }
-                }
-                var htmlStr = "<!DOCTYPE html><html><head><style>*{margin:0;padding:0;box-sizing:border-box;}</style></head><body>" + clone.outerHTML + "</body></html>";
-
-                var iframe = document.createElement("iframe");
-                iframe.style.cssText = "position:fixed;left:-9999px;top:-9999px;width:" + layer.w + "px;height:" + layer.h + "px;border:none;";
-                document.body.appendChild(iframe);
-                var iDoc = iframe.contentDocument || iframe.contentWindow.document;
-                iDoc.open();
-                iDoc.write(htmlStr);
-                iDoc.close();
-
-                setTimeout(function() {
-                  try {
-                    var iframeBody = iDoc.body;
-                    var hasEmbeds = iframeBody.querySelectorAll("iframe, object, embed, video").length > 0;
-                    if (!hasEmbeds) {
-                      var dataUrl = canvas.toDataURL("image/png");
-                      document.body.removeChild(iframe);
-                      resolve(dataUrl.split(",")[1]);
-                      return;
-                    }
-                    var c3 = iDoc.createElement("canvas");
-                    c3.width = Math.round(layer.w);
-                    c3.height = Math.round(layer.h);
-                    var ctx3 = c3.getContext("2d");
-                    var foreignObj = iDoc.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
-                    foreignObj.setAttribute("width", layer.w);
-                    foreignObj.setAttribute("height", layer.h);
-                    foreignObj.appendChild(iframeBody.cloneNode(true));
-                    var svg = iDoc.createElementNS("http://www.w3.org/2000/svg", "svg");
-                    svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-                    svg.setAttribute("width", layer.w);
-                    svg.setAttribute("height", layer.h);
-                    svg.appendChild(foreignObj);
-                    var svgStr = new XMLSerializer().serializeToString(svg);
-                    var blob = new Blob([svgStr], {type: "image/svg+xml;charset=utf-8"});
-                    var url = URL.createObjectURL(blob);
-                    var img = new Image();
-                    img.onload = function() {
-                      ctx3.drawImage(img, 0, 0);
-                      URL.revokeObjectURL(url);
-                      var dataUrl2 = c3.toDataURL("image/png");
-                      document.body.removeChild(iframe);
-                      resolve(dataUrl2.split(",")[1]);
-                    };
-                    img.onerror = function() {
-                      var dataUrl3 = canvas.toDataURL("image/png");
-                      document.body.removeChild(iframe);
-                      resolve(dataUrl3.split(",")[1]);
-                    };
-                    img.src = url;
-                  } catch(e) {
-                    var dataUrl4 = canvas.toDataURL("image/png");
-                    document.body.removeChild(iframe);
-                    resolve(dataUrl4.split(",")[1]);
-                  }
-                }, 300);
-              } catch(e) { resolve(null); }
-            });
-          }));
-        }, layerArgs);
-        return results;
-      }, { timeout: 60000, retries: 2 });
+      for (var ri = 0; ri < selectorLayers.length; ri++) {
+        var ldl = selectorLayers[ri];
+        try {
+          var sliceCanvas = createCanvas(Math.max(ldl.w, 1) * scale, Math.max(ldl.h, 1) * scale);
+          var sctx = sliceCanvas.getContext("2d");
+          sctx.drawImage(
+            fullPageCanvasImg,
+            ldl.x * scale, ldl.y * scale, Math.max(ldl.w, 1) * scale, Math.max(ldl.h, 1) * scale,
+            0, 0, Math.max(ldl.w, 1) * scale, Math.max(ldl.h, 1) * scale
+          );
+          elementRenderings.push(sliceCanvas.toDataURL("image/png").split(",")[1]);
+        } catch (e) {
+          elementRenderings.push(null);
+        }
+      }
     } catch (err) {
       console.log("  PSD: Element renderings failed:", err.message);
       elementRenderings = [];

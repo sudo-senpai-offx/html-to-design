@@ -1,6 +1,7 @@
 const JSZip = require("jszip");
 const { createCanvas, Image } = require("canvas");
 const { getPool } = require("../lib/browser-pool");
+const { resolveFormatOptions } = require("../lib/config");
 
 function uuid() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function(c) {
@@ -222,9 +223,11 @@ function buildSketchLayer(layerData, renderingBase64) {
 }
 
 async function convertToXd(html, options) {
-  var width = (options && options.width) || 1440;
-  var height = (options && options.height) || 900;
-  var scale = (options && options.scale) || 2;
+  var cfg = resolveFormatOptions("xd", options);
+  var width = cfg.width;
+  var height = cfg.height;
+  var scale = cfg.scale;
+  var maxElements = cfg.maxElements;
   var pool = getPool();
 
   var fullPageScreenshot = await pool.execute(async (page) => {
@@ -247,8 +250,8 @@ async function convertToXd(html, options) {
       await page.evaluate(function() { return document.fonts && document.fonts.ready; });
       await new Promise(function(r) { setTimeout(r, 500); });
 
-      var domTree = await page.evaluate(function() {
-        var MAX_ELEMENTS = 25000;
+      var domTree = await page.evaluate(function(maxElems) {
+        var MAX_ELEMENTS = maxElems || 25000;
         var elementCount = 0;
         function getCS(el) {
           var cs = window.getComputedStyle(el);
@@ -301,7 +304,7 @@ async function convertToXd(html, options) {
           };
         }
         return walk(document.body, 0);
-      });
+      }, maxElements);
       return domTree;
     }, { timeout: 30000, retries: 2 });
 
@@ -316,75 +319,29 @@ async function convertToXd(html, options) {
 
   var elementRenderings = [];
   if (selectorLayers.length > 0) {
+    /* Slice each layer's pixels straight from the full-page screenshot —
+     * fast and pixel-accurate (no per-layer iframe re-rendering). */
     try {
-      var layerArgs = selectorLayers.map(function(l) {
-        return { selector: l.selector, w: l.w, h: l.h };
-      });
-      elementRenderings = await pool.execute(async function(page) {
-        await page.setViewport({ width: width, height: height, deviceScaleFactor: 1 });
-        await page.setContent(html, { waitUntil: "networkidle2", timeout: 30000 });
-        await new Promise(function(r) { setTimeout(r, 500); });
-        var results = await page.evaluate(function(layers) {
-          return Promise.all(layers.map(function(layer) {
-            return new Promise(function(resolve) {
-              var el = document.querySelector(layer.selector);
-              if (!el) { resolve(null); return; }
-              try {
-                var rect = el.getBoundingClientRect();
-                var dpr = window.devicePixelRatio || 1;
-                var canvas = document.createElement("canvas");
-                canvas.width = Math.round(rect.width * dpr);
-                canvas.height = Math.round(rect.height * dpr);
-                var ctx = canvas.getContext("2d");
-                ctx.scale(dpr, dpr);
-                var clone = el.cloneNode(true);
-                clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
-                var styles = [];
-                var walk2 = clone;
-                var origWalk = el;
-                var stack = [[walk2, origWalk]];
-                while (stack.length > 0) {
-                  var pair = stack.pop();
-                  var c2 = pair[0], o = pair[1];
-                  var cs = window.getComputedStyle(o);
-                  var s = [];
-                  for (var i = 0; i < cs.length; i++) {
-                    var prop = cs[i];
-                    s.push(prop + ":" + cs.getPropertyValue(prop));
-                  }
-                  c2.style.cssText = s.join(";");
-                  var ci2 = c2.children, oi2 = o.children;
-                  for (var j = 0; j < ci2.length && j < oi2.length; j++) {
-                    stack.push([ci2[j], oi2[j]]);
-                  }
-                }
-                var htmlStr = "<!DOCTYPE html><html><head><style>*{margin:0;padding:0;box-sizing:border-box;}</style></head><body>" + clone.outerHTML + "</body></html>";
-                var iframe = document.createElement("iframe");
-                iframe.style.cssText = "position:fixed;left:-9999px;top:-9999px;width:" + rect.width + "px;height:" + rect.height + "px;border:none;";
-                document.body.appendChild(iframe);
-                var iDoc = iframe.contentDocument || iframe.contentWindow.document;
-                iDoc.open();
-                iDoc.write(htmlStr);
-                iDoc.close();
-                setTimeout(function() {
-                  try {
-                    var dataUrl = canvas.toDataURL("image/png");
-                    document.body.removeChild(iframe);
-                    resolve(dataUrl.split(",")[1]);
-                  } catch(e) {
-                    var dataUrl2 = canvas.toDataURL("image/png");
-                    document.body.removeChild(iframe);
-                    resolve(dataUrl2.split(",")[1]);
-                  }
-                }, 300);
-              } catch(e) { resolve(null); }
-            });
-          }));
-        }, layerArgs);
-        return results;
-      }, { timeout: 60000, retries: 2 });
+      var fullPageImg = new Image();
+      fullPageImg.src = fullPageScreenshot;
+      for (var ri = 0; ri < selectorLayers.length; ri++) {
+        var ldl = selectorLayers[ri];
+        try {
+          var sliceCanvas = createCanvas(Math.max(ldl.w, 1) * scale, Math.max(ldl.h, 1) * scale);
+          var sctx = sliceCanvas.getContext("2d");
+          sctx.drawImage(
+            fullPageImg,
+            ldl.x * scale, ldl.y * scale, Math.max(ldl.w, 1) * scale, Math.max(ldl.h, 1) * scale,
+            0, 0, Math.max(ldl.w, 1) * scale, Math.max(ldl.h, 1) * scale
+          );
+          elementRenderings.push(sliceCanvas.toDataURL("image/png").split(",")[1]);
+        } catch (e) {
+          elementRenderings.push(null);
+        }
+      }
     } catch (err) {
       console.log("  XD: Element renderings failed:", err.message);
+      elementRenderings = [];
     }
   }
 

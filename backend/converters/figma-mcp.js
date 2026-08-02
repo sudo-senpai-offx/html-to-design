@@ -31,14 +31,14 @@ async function convertToFigmaMcp(html, options) {
     var tree = buildTree(flatElements, pageWidth, pageHeight);
 
     console.log("  [MCP] Generating Figma Plugin API code...");
-    var result = convertToFigmaPluginCode(flatElements, tree, pageWidth, pageHeight, {
+    var pluginCode = convertToFigmaPluginCode(flatElements, tree, pageWidth, pageHeight, {
       pageName: pageName,
     });
 
     var output = JSON.stringify({
-      script: result.script,
-      description: result.description,
-      usage: result.usage,
+      script: pluginCode.script,
+      description: pluginCode.description,
+      usage: pluginCode.usage,
       metadata: {
         sourceWidth: pageWidth,
         sourceHeight: pageHeight,
