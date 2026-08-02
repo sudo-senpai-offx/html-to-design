@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>HTM to Design</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 16px; font-size: 13px; line-height: 1.5; }
+  .container { max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  h1 span { background: #7c3aed; color: #fff; font-size: 9px; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .subtitle { color: #888; font-size: 12px; margin-bottom: 16px; }
+  label { display: block; font-size: 11px; font-weight: 600; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  textarea { width: 100%; min-height: 220px; background: #16213e; border: 1px solid #2a2a4a; border-radius: 8px; color: #e0e0e0; padding: 12px; font-family: "SF Mono", "Fira Code", monospace; font-size: 11px; line-height: 1.6; resize: vertical; transition: border-color 0.2s; }
+  textarea:focus { outline: none; border-color: #7c3aed; }
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  button { flex: 1; padding: 10px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-primary { background: #7c3aed; color: #fff; }
+  .btn-primary:hover { background: #6d28d9; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-secondary { background: #2a2a4a; color: #ccc; }
+  .btn-secondary:hover { background: #3a3a5a; }
+  .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .options { display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
+  .option { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aaa; cursor: pointer; }
+  .option input { accent-color: #7c3aed; }
+  .status { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 12px; display: none; }
+  .status.info { display: block; background: #1e3a5f; border: 1px solid #2a5a8f; color: #8ab4f8; }
+  .status.success { display: block; background: #1a3a2a; border: 1px solid #2a6a3a; color: #6fcf97; }
+  .status.error { display: block; background: #3a1a1a; border: 1px solid #6a2a2a; color: #f28b82; }
+  .status .detail { display: block; margin-top: 4px; font-size: 11px; opacity: 0.8; }
+  .shortcuts { margin-top: 16px; padding: 10px 12px; background: #16213e; border-radius: 8px; font-size: 11px; color: #666; line-height: 1.6; }
+  .shortcuts kbd { background: #2a2a4a; padding: 1px 5px; border-radius: 3px; font-family: inherit; color: #aaa; font-size: 10px; }
+  .upload-area { margin-top: 12px; border: 1px dashed #2a2a4a; border-radius: 8px; padding: 16px; text-align: center; font-size: 12px; color: #666; cursor: pointer; transition: all 0.2s; }
+  .upload-area:hover { border-color: #7c3aed; color: #7c3aed; }
+  .upload-area input { display: none; }
+  .progress-bar { margin-top: 12px; height: 4px; background: #2a2a4a; border-radius: 2px; overflow: hidden; display: none; }
+  .progress-bar.active { display: block; }
+  .progress-bar .fill { height: 100%; background: #7c3aed; border-radius: 2px; transition: width 0.3s; width: 0%; }
+  .stats { margin-top: 12px; display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: #666; }
+  .stats span { display: flex; align-items: center; gap: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>&#9670; HTM to Design <span>v1</span></h1>
+  <p class="subtitle">Paste inlined HTML from any source to create native Figma layers</p>
+
+  <label for="htmlInput">Inlined HTML</label>
+  <textarea id="htmlInput" placeholder="&lt;!-- Paste your inlined HTML here --&gt;&#10;&#10;Expects HTML with:&#10;  - Inline styles: style=&quot;color:#ff0000;font-size:16px;...&quot;&#10;  - Positions: data-rect=&quot;x,y,w,h&quot;&#10;  - Element IDs: data-el-id=&quot;0&quot;&#10;&#10;Generate this HTML via the backend&#10;and paste it here to import into Figma." spellcheck="false"></textarea>
+
+  <div class="options">
+    <label class="option"><input type="checkbox" id="optAutoLayout" checked> Auto-layout (flex/grid)</label>
+    <label class="option"><input type="checkbox" id="optImages" checked> Import images</label>
+    <label class="option"><input type="checkbox" id="optShadows" checked> Shadows & effects</label>
+    <label class="option"><input type="checkbox" id="optNaming" checked> Smart layer naming</label>
+  </div>
+
+  <div class="upload-area" id="uploadArea">
+    &#128196; Drop or click to upload an HTML file
+    <input type="file" id="fileInput" accept=".html,.htm">
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" id="importBtn">&#9654; Import to Figma</button>
+    <button class="btn-secondary" id="clearBtn">Clear</button>
+  </div>
+
+  <div class="progress-bar" id="progressBar"><div class="fill" id="progressFill"></div></div>
+  <div class="status" id="status"></div>
+  <div class="stats" id="stats"></div>
+  <div class="shortcuts">
+    <strong>Tips:</strong><br>
+    &#8226; Generate inlined HTML from any converter (backend), then paste above<br>
+    &#8226; <kbd>Ctrl+A</kbd> select all &nbsp; <kbd>Ctrl+V</kbd> paste<br>
+    &#8226; Creates native Figma frames, rectangles, texts, and images<br>
+    &#8226; Supports: backgrounds, borders, shadows, gradients, flexbox/grid auto-layout, fonts, blend modes<br>
+    &#8226; All layers are fully editable in Figma
+  </div>
+</div>
+
+<script>
+var htmlInput = document.getElementById("htmlInput");
+var importBtn = document.getElementById("importBtn");
+var clearBtn = document.getElementById("clearBtn");
+var statusEl = document.getElementById("status");
+var statsEl = document.getElementById("stats");
+var progressBar = document.getElementById("progressBar");
+var progressFill = document.getElementById("progressFill");
+var fileInput = document.getElementById("fileInput");
+var uploadArea = document.getElementById("uploadArea");
+
+var optAutoLayout = document.getElementById("optAutoLayout");
+var optImages = document.getElementById("optImages");
+var optShadows = document.getElementById("optShadows");
+var optNaming = document.getElementById("optNaming");
+
+function setStatus(type, message, detail) {
+  statusEl.className = "status " + type;
+  statusEl.innerHTML = message + (detail ? '<span class="detail">' + detail + "</span>" : "");
+}
+
+function setProgress(pct) {
+  progressBar.classList.add("active");
+  progressFill.style.width = pct + "%";
+}
+
+function updateStats() {
+  var html = htmlInput.value;
+  var elCount = (html.match(/data-el-id=/g) || []).length;
+  var styleCount = (html.match(/style="/g) || []).length;
+  var textLen = html.length;
+  var rectCount = (html.match(/data-rect=/g) || []).length;
+  if (textLen === 0) { statsEl.innerHTML = ""; return; }
+  statsEl.innerHTML =
+    '<span>&#9632; Elements: ' + elCount + "</span>" +
+    '<span>&#9632; Styles: ' + styleCount + "</span>" +
+    '<span>&#9632; Rects: ' + rectCount + "</span>" +
+    '<span>&#9632; Size: ' + (textLen / 1024).toFixed(1) + "KB</span>";
+}
+
+htmlInput.addEventListener("input", updateStats);
+
+function readFile(file) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    htmlInput.value = e.target.result;
+    updateStats();
+    setStatus("info", "File loaded: " + file.name, (e.target.result.length / 1024).toFixed(1) + "KB loaded");
+  };
+  reader.readAsText(file);
+}
+
+uploadArea.addEventListener("click", function() { fileInput.click(); });
+uploadArea.addEventListener("dragover", function(e) { e.preventDefault(); uploadArea.style.borderColor = "#7c3aed"; });
+uploadArea.addEventListener("dragleave", function() { uploadArea.style.borderColor = "#2a2a4a"; });
+uploadArea.addEventListener("drop", function(e) {
+  e.preventDefault();
+  uploadArea.style.borderColor = "#2a2a4a";
+  if (e.dataTransfer.files.length > 0) readFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", function() {
+  if (fileInput.files.length > 0) readFile(fileInput.files[0]);
+});
+
+clearBtn.addEventListener("click", function() {
+  htmlInput.value = "";
+  statusEl.className = "status";
+  statsEl.innerHTML = "";
+  progressBar.classList.remove("active");
+});
+
+importBtn.addEventListener("click", function() {
+  var html = htmlInput.value.trim();
+  if (!html) {
+    setStatus("error", "No HTML to import", "Paste your inlined HTML into the textarea above");
+    return;
+  }
+
+  importBtn.disabled = true;
+  setProgress(10);
+  setStatus("info", "Sending to Figma...", "Parsing " + html.length + " bytes of HTML");
+
+  parent.postMessage({
+    pluginMessage: {
+      type: "import-html",
+      html: html,
+      options: {
+        autoLayout: optAutoLayout.checked,
+        images: optImages.checked,
+        shadows: optShadows.checked,
+        naming: optNaming.checked,
+      },
+    }
+  }, "*");
+});
+
+window.onmessage = function(event) {
+  var msg = event.data.pluginMessage;
+  if (!msg) return;
+
+  if (msg.type === "progress") {
+    setProgress(msg.percent);
+    if (msg.message) setStatus("info", msg.message);
+  }
+
+  if (msg.type === "result") {
+    importBtn.disabled = false;
+    setProgress(100);
+    if (msg.success) {
+      var detail = msg.elementCount + " elements | " + msg.nodeCount + " Figma nodes | " + (msg.elapsed / 1000).toFixed(1) + "s";
+      if (msg.warnings && msg.warnings.length > 0) {
+        detail += " | Warnings: " + msg.warnings.join(", ");
+      }
+      setStatus("success", "\u2713 Imported successfully!", detail);
+    } else {
+      setStatus("error", "Import failed", msg.error || "Unknown error");
+    }
+    setTimeout(function() { setProgress(0); progressBar.classList.remove("active"); }, 2000);
+  }
+};
+
+updateStats();
+setStatus("info", "Ready", "Paste your inlined HTML and click Import to Figma");
+</script>
+</body>
+</html>

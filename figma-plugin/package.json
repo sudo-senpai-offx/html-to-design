@@ -1,0 +1,14 @@
+{
+  "name": "htm-to-design",
+  "version": "1.0.0",
+  "description": "Open-source HTML to Figma design converter — import any webpage as native Figma layers",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.95.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.4.0"
+  }
+}

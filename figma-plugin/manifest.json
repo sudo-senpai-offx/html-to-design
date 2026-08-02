@@ -1,0 +1,14 @@
+{
+  "name": "HTM to Design",
+  "id": "htm-to-design",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "ui/index.html",
+  "capabilities": [],
+  "enableProposedApi": false,
+  "editorType": ["figma"],
+  "permissions": [],
+  "networkAccess": {
+    "allowedDomains": ["none"]
+  }
+}
