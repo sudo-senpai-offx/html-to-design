@@ -2,6 +2,57 @@ function hasZeroArea(el) {
   return el.w <= 0 || el.h <= 0;
 }
 
+var { flattenStackingContexts } = require("./stacking-flattener");
+
+/**
+ * Many frameworks wrap real content in transparent <div>s purely for layout.
+ * Those wrappers share an exact rect with their single child and add nothing
+ * visually — in Figma they only clutter the layer panel. Drop any element that
+ * (a) carries no visual weight of its own and (b) exactly overlaps another
+ * element that does.
+ */
+function deduplicateWrappers(elements) {
+  if (!elements || elements.length < 2) return elements;
+
+  function hasVisualWeight(el) {
+    var p = (el && el.props) || {};
+    var bg = p["background-color"] || "";
+    var bgImage = p["background-image"] || "";
+    var transparent = bg === "transparent" || bg === "" || /rgba\(0,\s*0,\s*0,\s*0(?:\.0+)?\)/.test(bg);
+    var hasBorder =
+      (parseFloat(p["border-top-width"]) || 0) > 0 ||
+      (parseFloat(p["border-bottom-width"]) || 0) > 0 ||
+      (parseFloat(p["border-left-width"]) || 0) > 0 ||
+      (parseFloat(p["border-right-width"]) || 0) > 0;
+    var hasText = !!(el.text && el.text.length > 0);
+    var hasMedia = !!(el.src || el.bgImage || el.svgPaths || (el.attrs && el.attrs.fill && el.attrs.fill !== "none"));
+    return hasText || hasMedia || (!transparent && bg !== "") || !!bgImage || hasBorder;
+  }
+
+  function sameRect(a, b) {
+    return Math.abs((a.x || 0) - (b.x || 0)) < 1 &&
+           Math.abs((a.y || 0) - (b.y || 0)) < 1 &&
+           Math.abs((a.w || 0) - (b.w || 0)) < 1 &&
+           Math.abs((a.h || 0) - (b.h || 0)) < 1;
+  }
+
+  var dropIds = {};
+  for (var i = 0; i < elements.length; i++) {
+    var el = elements[i];
+    if (!el || el.id === undefined || dropIds[el.id] || hasVisualWeight(el)) continue;
+    for (var j = 0; j < elements.length; j++) {
+      if (i === j) continue;
+      var other = elements[j];
+      if (!other || other.id === el.id) continue;
+      if (sameRect(el, other) && hasVisualWeight(other)) {
+        dropIds[el.id] = true;
+        break;
+      }
+    }
+  }
+  return elements.filter(function(e) { return !dropIds[e.id]; });
+}
+
 function contains(outer, inner) {
   var outerArea = outer.w * outer.h;
   var innerArea = inner.w * inner.h;
@@ -45,7 +96,8 @@ function buildSpatialGrid(elements, pageW, pageH) {
 }
 
 function buildTree(flatElements, pageWidth, pageHeight) {
-  if (!flatElements || flatElements.length === 0) {
+  var deduped = deduplicateWrappers(flatElements);
+  if (!deduped || deduped.length === 0) {
     return {
       id: -1,
       element: { tag: "__page__", x: 0, y: 0, w: pageWidth || 1440, h: pageHeight || 900, props: {}, cls: "", text: "", attrs: {}, dataAttrs: {} },
@@ -53,7 +105,7 @@ function buildTree(flatElements, pageWidth, pageHeight) {
     };
   }
 
-  var elements = flatElements.slice();
+  var elements = deduped.slice();
   elements.sort(function(a, b) { return area(a) - area(b); });
 
   var spatial = buildSpatialGrid(elements, pageWidth, pageHeight);
@@ -148,15 +200,21 @@ function buildTree(flatElements, pageWidth, pageHeight) {
     }
   }
 
-  return {
+  var root = {
     id: -1,
     element: { tag: "__page__", x: 0, y: 0, w: pageWidth, h: pageHeight, props: {}, cls: "", text: "", attrs: {}, dataAttrs: {} },
     children: roots,
   };
+
+  /* Flatten stacking contexts to match Figma's flat per-frame layer model:
+   * children whose z-index would conflict outside their parent are promoted. */
+  flattenStackingContexts(root);
+
+  return root;
 }
 
 function containsRect(ox, oy, ow, oh, inner) {
   return ox <= inner.x && oy <= inner.y && ox + ow >= inner.x + inner.w && oy + oh >= inner.y + inner.h;
 }
 
-module.exports = { buildTree };
+module.exports = { buildTree, deduplicateWrappers };

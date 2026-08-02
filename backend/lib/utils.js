@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { parseCssGradient } = require("./gradient-parser");
 
 function hexToRgb(hex) {
   hex = hex.replace("#", "");
@@ -72,72 +73,7 @@ function solidFill(str, opacity) {
 
 function parseGradient(str) {
   if (!str || str === "none") return [];
-
-  function parseGradientStops(inner) {
-    var stops = [];
-    var re = /(rgba?\([^)]+\)|#[0-9a-fA-F]{3,8}|transparent|white|black)\s*([\d.]+)%?/g;
-    var cm;
-    while ((cm = re.exec(inner)) !== null) {
-      var colorStr = cm[1];
-      var pos = parseFloat(cm[2]) / 100;
-      if (colorStr === "transparent" || colorStr === "rgba(0, 0, 0, 0)" || colorStr === "rgba(0,0,0,0)" || colorStr === "rgb(0, 0, 0)") {
-        stops.push({ color: { r: 0, g: 0, b: 0, a: 0 }, position: pos });
-      } else if (colorStr === "white") {
-        stops.push({ color: { r: 1, g: 1, b: 1, a: 1 }, position: pos });
-      } else if (colorStr === "black") {
-        stops.push({ color: { r: 0, g: 0, b: 0, a: 1 }, position: pos });
-      } else {
-        var c = parseColor(colorStr);
-        if (c) stops.push({ color: c, position: pos });
-      }
-    }
-    return stops;
-  }
-
-  var defaultColor = { r: 0, g: 0, b: 0, a: 1 };
-
-  var rgm = str.match(/radial-gradient\((.+)\)/);
-  if (rgm) {
-    var stops = parseGradientStops(rgm[1]);
-    if (stops.length < 2) return [];
-    return [{
-      type: "GRADIENT_RADIAL",
-      color: stops[0].color || defaultColor,
-      gradientStops: stops,
-      gradientTransform: { m00: 0.5, m01: 0, m02: 0.5, m10: 0, m11: 0.5, m12: 0.5 },
-      opacity: 1, visible: true, blendMode: "NORMAL",
-    }];
-  }
-
-  var lm = str.match(/linear-gradient\((.+)\)/);
-  if (!lm) return [];
-  var inner = lm[1];
-  var am = inner.match(/([\d.]+)deg/);
-  var angle;
-  if (am) {
-    angle = parseFloat(am[1]);
-  } else if (inner.match(/to\s+top\s+right/)) { angle = 45;
-  } else if (inner.match(/to\s+bottom\s+right/)) { angle = 135;
-  } else if (inner.match(/to\s+bottom\s+left/)) { angle = 225;
-  } else if (inner.match(/to\s+top\s+left/)) { angle = 315;
-  } else if (inner.match(/to\s+top/)) { angle = 0;
-  } else if (inner.match(/to\s+right/)) { angle = 90;
-  } else if (inner.match(/to\s+bottom/)) { angle = 180;
-  } else if (inner.match(/to\s+left/)) { angle = 270;
-  } else { angle = 180; }
-  var stops = parseGradientStops(inner);
-  if (stops.length < 2) return [];
-  var rad = (angle * Math.PI) / 180;
-  return [{
-    type: "GRADIENT_LINEAR",
-    color: stops[0].color || defaultColor,
-    gradientStops: stops,
-    gradientTransform: {
-      m00: Math.sin(rad), m01: Math.cos(rad), m02: 0.5 - 0.5 * Math.sin(rad),
-      m10: -Math.cos(rad), m11: Math.sin(rad), m12: 0.5 + 0.5 * Math.cos(rad),
-    },
-    opacity: 1, visible: true, blendMode: "NORMAL",
-  }];
+  return parseCssGradient(str);
 }
 
 function resolveFills(props) {

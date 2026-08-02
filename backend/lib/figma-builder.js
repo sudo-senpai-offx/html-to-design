@@ -34,6 +34,26 @@ function mapTextDecoration(td) {
   return "NONE";
 }
 
+/**
+ * CSS lays text out from a baseline inside a line-height box, vertically
+ * centering the glyphs. Figma places text at the top of its bounding box.
+ * Shift the text down by half the leading gap and shrink the box to the font
+ * size so browser and Figma agree vertically.
+ */
+function adjustTextVerticalOffset(node, styles) {
+  if (!node || node.type !== "TEXT") return node;
+  var fontSize = parseFloat(styles && styles.fontSize) || 16;
+  var lineHeight = parseFloat(styles && styles.lineHeight);
+  if (!lineHeight || isNaN(lineHeight) || lineHeight <= 0) lineHeight = fontSize;
+  var offset = (lineHeight - fontSize) / 2;
+  if (offset > 1) {
+    node.y = (node.y || 0) + offset;
+    node.height = fontSize;
+  }
+  node.textAlignVertical = "TOP";
+  return node;
+}
+
 var DEFAULT_COLOR = { r: 0, g: 0, b: 0, a: 1 };
 var _debugNodeCount = 0;
 var _debugEnabled = false;
@@ -554,6 +574,8 @@ async function convertNode(treeNode, parentId, parentElement, childIndex, assetM
     }
     textOverrides.opacity = s.opacity;
 
+    adjustTextVerticalOffset(textOverrides, { fontSize: fontSize, lineHeight: lineHeightVal });
+
     graph.createNode("TEXT", nodeId || parentId, textOverrides);
   }
 
@@ -627,4 +649,4 @@ async function buildDocument(tree, pageWidth, pageHeight, pageName, assetManager
   return graph;
 }
 
-module.exports = { buildDocument, normalizeCoordinates };
+module.exports = { buildDocument, normalizeCoordinates, adjustTextVerticalOffset };
