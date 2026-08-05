@@ -80,7 +80,7 @@ async function convertToPdf(html, options) {
     await page.setViewport({ width, height, deviceScaleFactor: scale });
 
     var modifiedHtml = injectPrintCss(html, format, landscape, margin);
-    await page.setContent(modifiedHtml, { waitUntil: "networkidle2", timeout: 30000 });
+    await page.setContent(modifiedHtml, { waitUntil: "networkidle2", timeout: cfg.setContentTimeout });
 
     await page.evaluate(() => document.fonts && document.fonts.ready);
     await new Promise((r) => setTimeout(r, 800));
@@ -103,6 +103,7 @@ async function convertToPdf(html, options) {
         left: margin,
       },
       preferCSSPageSize: true,
+      timeout: cfg.taskTimeout || 120000,
     };
 
     if (headerFooter) {
@@ -122,7 +123,7 @@ async function convertToPdf(html, options) {
     }
 
     return page.pdf(pdfOptions);
-  }, { timeout: 120000, retries: 2 });
+  }, { timeout: cfg.taskTimeout || 120000, retries: 2 });
 }
 
 module.exports = { convertToPdf };

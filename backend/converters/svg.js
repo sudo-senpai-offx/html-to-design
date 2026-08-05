@@ -436,7 +436,7 @@ async function convertToSvg(html, options) {
 
   return pool.execute(async (page) => {
     await page.setViewport({ width, height, deviceScaleFactor: scale });
-    await page.setContent(html, { waitUntil: "networkidle2", timeout: 30000 });
+    await page.setContent(html, { waitUntil: "networkidle2", timeout: cfg.setContentTimeout });
     await page.evaluate(() => document.fonts && document.fonts.ready);
     await new Promise((r) => setTimeout(r, 800));
 
@@ -450,7 +450,7 @@ async function convertToSvg(html, options) {
 
     var svgStr = buildSvg(pw, ph, elements);
     return Buffer.from(svgStr, "utf-8");
-  }, { timeout: 90000, retries: 3 });
+  }, { timeout: cfg.taskTimeout || 90000, retries: 3 });
 }
 
 module.exports = { convertToSvg };

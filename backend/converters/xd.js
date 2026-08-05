@@ -232,7 +232,7 @@ async function convertToXd(html, options) {
 
   var fullPageScreenshot = await pool.execute(async (page) => {
     await page.setViewport({ width: width, height: height, deviceScaleFactor: scale });
-    await page.setContent(html, { waitUntil: "networkidle2", timeout: 30000 });
+    await page.setContent(html, { waitUntil: "networkidle2", timeout: cfg.setContentTimeout });
     await page.evaluate(function() { return document.fonts && document.fonts.ready; });
     await new Promise(function(r) { setTimeout(r, 600); });
     var ph = await page.evaluate(function() { return document.documentElement.scrollHeight; });
@@ -240,13 +240,13 @@ async function convertToXd(html, options) {
       type: "png",
       clip: { x: 0, y: 0, width: width, height: Math.max(ph, height) },
     });
-  }, { timeout: 60000, retries: 3 });
+  }, { timeout: cfg.taskTimeout || 60000, retries: 3 });
 
   var layers = [];
   try {
     var domResult = await pool.execute(async (page) => {
       await page.setViewport({ width: width, height: height, deviceScaleFactor: 1 });
-      await page.setContent(html, { waitUntil: "networkidle2", timeout: 30000 });
+      await page.setContent(html, { waitUntil: "networkidle2", timeout: cfg.setContentTimeout });
       await page.evaluate(function() { return document.fonts && document.fonts.ready; });
       await new Promise(function(r) { setTimeout(r, 500); });
 
@@ -306,7 +306,7 @@ async function convertToXd(html, options) {
         return walk(document.body, 0);
       }, maxElements);
       return domTree;
-    }, { timeout: 30000, retries: 2 });
+    }, { timeout: cfg.taskTimeout || 30000, retries: 2 });
 
     if (domResult) {
       collectLayers(domResult, 0, 0, 0, layers);

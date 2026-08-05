@@ -36,18 +36,46 @@ function deduplicateWrappers(elements) {
            Math.abs((a.h || 0) - (b.h || 0)) < 1;
   }
 
+  /* Index visual-weight elements by rounded rect so dedup is O(n) instead of
+   * O(n^2) — required to keep large extractions (tens of thousands of nodes)
+   * tractable. sameRect() uses a <1px tolerance, so neighbor keys are checked
+   * to catch rects that straddle an integer boundary. */
+  function rectKey(el) {
+    return Math.floor(el.x || 0) + ":" + Math.floor(el.y || 0) + ":" + Math.floor(el.w || 0) + ":" + Math.floor(el.h || 0);
+  }
+
+  var visualByRect = {};
+  for (var v = 0; v < elements.length; v++) {
+    var ve = elements[v];
+    if (!ve || hasVisualWeight(ve)) {
+      if (ve) visualByRect[rectKey(ve)] = ve;
+    }
+  }
+
+  function findVisualAt(rect) {
+    var key = rectKey(rect);
+    for (var dx = -1; dx <= 1; dx++) {
+      for (var dy = -1; dy <= 1; dy++) {
+        for (var dw = -1; dw <= 1; dw++) {
+          for (var dh = -1; dh <= 1; dh++) {
+            var nb = Math.floor((rect.x || 0) + dx) + ":" + Math.floor((rect.y || 0) + dy) + ":" +
+                     Math.floor((rect.w || 0) + dw) + ":" + Math.floor((rect.h || 0) + dh);
+            var found = visualByRect[nb];
+            if (found && found.id !== rect.id) return found;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
   var dropIds = {};
   for (var i = 0; i < elements.length; i++) {
     var el = elements[i];
     if (!el || el.id === undefined || dropIds[el.id] || hasVisualWeight(el)) continue;
-    for (var j = 0; j < elements.length; j++) {
-      if (i === j) continue;
-      var other = elements[j];
-      if (!other || other.id === el.id) continue;
-      if (sameRect(el, other) && hasVisualWeight(other)) {
-        dropIds[el.id] = true;
-        break;
-      }
+    var other = findVisualAt(el);
+    if (other && other.id !== el.id && sameRect(el, other)) {
+      dropIds[el.id] = true;
     }
   }
   return elements.filter(function(e) { return !dropIds[e.id]; });

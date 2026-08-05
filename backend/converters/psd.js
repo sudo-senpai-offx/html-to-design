@@ -155,7 +155,7 @@ async function convertToPsd(html, options) {
 
   var fullPageCanvas = await pool.execute(async (page) => {
     await page.setViewport({ width: width, height: height, deviceScaleFactor: scale });
-    await page.setContent(html, { waitUntil: "networkidle2", timeout: 30000 });
+    await page.setContent(html, { waitUntil: "networkidle2", timeout: cfg.setContentTimeout });
     await page.evaluate(function() { return document.fonts && document.fonts.ready; });
     await new Promise(function(r) { setTimeout(r, 600); });
     var ph = await page.evaluate(function() { return document.documentElement.scrollHeight; });
@@ -170,7 +170,7 @@ async function convertToPsd(html, options) {
     var ctx = img.getContext("2d");
     ctx.drawImage(pngImg, 0, 0, img.width, img.height);
     return { canvas: img, pageHeight: clipHeight };
-  }, { timeout: 60000, retries: 3 });
+  }, { timeout: cfg.taskTimeout || 60000, retries: 3 });
 
   var fullPageCanvasImg = fullPageCanvas.canvas;
   var actualHeight = fullPageCanvas.pageHeight;
@@ -179,7 +179,7 @@ async function convertToPsd(html, options) {
   try {
     var domResult = await pool.execute(async (page) => {
       await page.setViewport({ width: width, height: height, deviceScaleFactor: 1 });
-      await page.setContent(html, { waitUntil: "networkidle2", timeout: 30000 });
+      await page.setContent(html, { waitUntil: "networkidle2", timeout: cfg.setContentTimeout });
       await page.evaluate(function() { return document.fonts && document.fonts.ready; });
       await new Promise(function(r) { setTimeout(r, 500); });
 
@@ -254,7 +254,7 @@ async function convertToPsd(html, options) {
       }, maxElements);
 
       return domTree;
-    }, { timeout: 30000, retries: 2 });
+    }, { timeout: cfg.taskTimeout || 30000, retries: 2 });
 
     if (domResult) {
       collectLayers(domResult, 0, 0, 0, layers);

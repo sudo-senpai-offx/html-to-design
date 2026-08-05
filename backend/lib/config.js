@@ -38,6 +38,8 @@ var DEFAULT_CONFIG = {
   maxDepth: 60,
   maxBatchBytes: 100 * 1024,
   screenshotCap: 30000,
+  setContentTimeout: 30000,
+  taskTimeout: 0,
   pdf: {
     format: "A4",
     landscape: false,
@@ -72,6 +74,8 @@ function getConfig(name) {
     maxDepth: envInt("CONVERT_MAX_DEPTH", DEFAULT_CONFIG.maxDepth),
     maxBatchBytes: envInt("CONVERT_MAX_BATCH_BYTES", DEFAULT_CONFIG.maxBatchBytes),
     screenshotCap: envInt("CONVERT_SCREENSHOT_CAP", DEFAULT_CONFIG.screenshotCap),
+    setContentTimeout: envInt("CONVERT_SETCONTENT_TIMEOUT", DEFAULT_CONFIG.setContentTimeout),
+    taskTimeout: envInt("CONVERT_TASK_TIMEOUT", DEFAULT_CONFIG.taskTimeout),
   };
 }
 

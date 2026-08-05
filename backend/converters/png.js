@@ -38,7 +38,7 @@ async function convertToPng(html, options) {
 
   return pool.execute(async (page) => {
     await page.setViewport({ width, height, deviceScaleFactor: scale });
-    await page.setContent(html, { waitUntil: "networkidle2", timeout: 30000 });
+    await page.setContent(html, { waitUntil: "networkidle2", timeout: cfg.setContentTimeout });
     await page.evaluate(() => document.fonts && document.fonts.ready);
     await new Promise((r) => setTimeout(r, 500));
 
@@ -89,7 +89,7 @@ async function convertToPng(html, options) {
       fullPage: false,
       omitBackground: transparent,
     });
-  }, { timeout: 60000, retries: 3 });
+  }, { timeout: cfg.taskTimeout || 60000, retries: 3 });
 }
 
 module.exports = { convertToPng };
